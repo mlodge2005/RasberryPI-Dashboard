@@ -1,0 +1,36 @@
+.env
+.env.*
+!.env.example
+
+# Python
+backend/.venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local data and secrets
+data/*
+!data/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Logs and OS junk
+*.log
+logs/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,24 @@
+[Unit]
+Description=PiDeck Raspberry Pi dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__GROUP__
+WorkingDirectory="__APP_DIR__"
+EnvironmentFile="__APP_DIR__/.env"
+Environment=PYTHONUNBUFFERED=1
+ExecStart="__APP_DIR__/backend/.venv/bin/python" -m backend
+Restart=on-failure
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# The browser terminal is a normal shell for this user.
+# Do not enable NoNewPrivileges, ProtectSystem, or PrivateTmp:
+# those settings break sudo and ordinary shell behavior.
+
+[Install]
+WantedBy=multi-user.target
