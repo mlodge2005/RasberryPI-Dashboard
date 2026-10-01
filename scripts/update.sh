@@ -31,6 +31,18 @@ echo "Rebuilding the frontend"
 )
 
 if [[ -f /etc/systemd/system/pideck.service ]]; then
+  echo "Refreshing pideck.service"
+  unit_tmp="$(mktemp)"
+  "$ROOT/backend/.venv/bin/python" "$ROOT/scripts/render-unit.py" \
+    --root "$ROOT" \
+    --user "$(id -un)" \
+    --group "$(id -gn)" \
+    --output "$unit_tmp"
+  echo "Rendered service paths:"
+  grep -E '^(WorkingDirectory|ExecStart|EnvironmentFile)=' "$unit_tmp"
+  sudo cp "$unit_tmp" /etc/systemd/system/pideck.service
+  rm -f "$unit_tmp"
+  sudo systemctl daemon-reload
   echo "Restarting pideck.service"
   sudo systemctl restart pideck.service
   sleep 1

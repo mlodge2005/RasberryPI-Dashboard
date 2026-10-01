@@ -308,6 +308,10 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 ## Troubleshooting
 
+**`Unit pideck.service has a bad unit file setting`.** `StartLimitIntervalSec=` and `StartLimitBurst=` belong under `[Unit]`. Run `./scripts/update.sh` so it rewrites `/etc/systemd/system/pideck.service` from the template.
+
+**`path is not absolute`.** systemd is still using a placeholder or a quoted path. Do not copy `systemd/pideck.service` into `/etc` by hand. From the PiDeck directory run `./scripts/update.sh`. It fills in the real absolute path, reloads systemd, and restarts PiDeck.
+
 **The service restarts and then stops.** `journalctl -u pideck -n 80 --no-pager`. The usual causes are a missing `.env`, a placeholder session secret while `PIDECK_DEV=false`, or `PIDECK_HOST` set to something other than localhost.
 
 **Login always says the password is wrong.** Create a user with `python -m backend.create_user`. The message is the same when the username does not exist.

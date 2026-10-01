@@ -144,21 +144,13 @@ fi
 
 if command -v systemctl >/dev/null 2>&1; then
   unit_tmp="$(mktemp)"
-  PIDECK_ROOT="$ROOT" \
-  PIDECK_USER="$(id -un)" \
-  PIDECK_GROUP="$(id -gn)" \
-  PIDECK_UNIT_OUT="$unit_tmp" \
-  "$PYTHON" - <<'PY'
-import os
-from pathlib import Path
-
-root = Path(os.environ["PIDECK_ROOT"])
-rendered = (root / "systemd" / "pideck.service").read_text(encoding="utf-8")
-rendered = rendered.replace("__USER__", os.environ["PIDECK_USER"])
-rendered = rendered.replace("__GROUP__", os.environ["PIDECK_GROUP"])
-rendered = rendered.replace("__APP_DIR__", str(root))
-Path(os.environ["PIDECK_UNIT_OUT"]).write_text(rendered, encoding="utf-8")
-PY
+  "$PYTHON" "$ROOT/scripts/render-unit.py" \
+    --root "$ROOT" \
+    --user "$(id -un)" \
+    --group "$(id -gn)" \
+    --output "$unit_tmp"
+  echo "Rendered service paths:"
+  grep -E '^(WorkingDirectory|ExecStart|EnvironmentFile)=' "$unit_tmp"
   echo "Installing the systemd service (sudo will prompt if needed)"
   sudo cp "$unit_tmp" /etc/systemd/system/pideck.service
   rm -f "$unit_tmp"
