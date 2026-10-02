@@ -57,6 +57,44 @@ export type SystemInfo = {
   pi_model: string | null
 }
 
+export type BatteryLevel = "normal" | "low" | "charge_soon" | "critical" | "charging" | "unknown"
+
+export type BatteryUsageStats = {
+  current_session_seconds: number | null
+  today_seconds: number
+  week_seconds: number
+  week_average_session_seconds: number | null
+  week_session_count: number
+  estimated_full_runtime_minutes: number | null
+  calibration_sample_count: number
+  calibration_samples_minutes: number[]
+}
+
+export type BatteryEstimate = {
+  model: string
+  external_power: boolean | null
+  power_label: string
+  estimated_percent: number | null
+  estimate_uncertain: boolean
+  time_on_battery_seconds: number | null
+  estimated_remaining_seconds: number | null
+  charge_recommended_in_seconds: number | null
+  level: BatteryLevel
+  advice: string | null
+  detail: string | null
+  tracking: boolean
+  disclaimer: string
+  stats: BatteryUsageStats
+}
+
+export type BatterySettings = {
+  estimated_full_runtime_minutes: number | null
+  full_charge_time_minutes: number | null
+  calibration_median_minutes: number | null
+  calibration_sample_count: number
+  calibration_samples_minutes: number[]
+}
+
 export type BatteryInfo = {
   available: boolean
   percent: number | null
@@ -64,6 +102,7 @@ export type BatteryInfo = {
   status: string | null
   voltage: number | null
   message: string | null
+  estimate: BatteryEstimate | null
 }
 
 export type SystemSnapshot = {

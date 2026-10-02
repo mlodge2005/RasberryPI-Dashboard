@@ -1,5 +1,5 @@
-import type { BatteryInfo, NetworkStats, SystemSnapshot } from "../api/types"
-import { formatBytes, formatPercent, formatUptime, formatWhen, unavailable } from "../utils/format"
+import type { BatteryEstimate, BatteryInfo, NetworkStats, SystemSnapshot } from "../api/types"
+import { formatBytes, formatDuration, formatPercent, formatUptime, formatWhen, unavailable } from "../utils/format"
 
 export function DashboardPage({
   snapshot,
@@ -100,10 +100,7 @@ export function DashboardPage({
           </dl>
         </article>
 
-        <article className="card">
-          <div className="card-label">Battery / Power</div>
-          <BatteryDetails battery={battery} />
-        </article>
+        <BatteryCard battery={battery} />
       </div>
     </section>
   )
@@ -122,9 +119,27 @@ function tailscaleValue(network: NetworkStats): string {
   return "Unavailable"
 }
 
-function BatteryDetails({ battery }: { battery: BatteryInfo }) {
+function BatteryCard({ battery }: { battery: BatteryInfo }) {
+  const estimate = battery.estimate
+  if (estimate?.tracking) {
+    return (
+      <article className="card card-wide battery-card" data-level={estimate.level}>
+        <div className="card-label">Battery / Power</div>
+        <EstimateDetails estimate={estimate} />
+      </article>
+    )
+  }
+  return (
+    <article className="card">
+      <div className="card-label">Battery / Power</div>
+      <SensorDetails battery={battery} />
+    </article>
+  )
+}
+
+function SensorDetails({ battery }: { battery: BatteryInfo }) {
   if (!battery.available) {
-    return <p className="unavailable-copy">{battery.message ?? "Battery information unavailable"}</p>
+    return <p className="unavailable-copy">{battery.estimate?.detail ?? battery.message ?? "Battery information unavailable"}</p>
   }
   const status = battery.status ?? (battery.charging ? "charging" : "unknown")
   return (
@@ -136,6 +151,76 @@ function BatteryDetails({ battery }: { battery: BatteryInfo }) {
         <Row label="Voltage" value={battery.voltage === null ? "Unavailable" : `${battery.voltage.toFixed(2)} V`} />
       </dl>
     </>
+  )
+}
+
+function EstimateDetails({ estimate }: { estimate: BatteryEstimate }) {
+  const stats = estimate.stats
+  const charge = estimate.estimated_percent === null ? (estimate.estimate_uncertain ? "Uncertain" : "Not calibrated") : formatPercent(estimate.estimated_percent)
+  const recommendation =
+    estimate.level === "normal" && estimate.charge_recommended_in_seconds != null
+      ? `Charge recommended in ${formatDuration(estimate.charge_recommended_in_seconds, true)}`
+      : estimate.advice
+  const samples = stats.calibration_samples_minutes.map((minutes) => formatDuration(minutes * 60))
+  return (
+    <div className="battery-estimate">
+      <div className="battery-kicker">{estimate.model}</div>
+      <div className="battery-grid">
+        <BatteryBlock label="Power" value={estimate.power_label} />
+        <BatteryBlock label="Estimated charge" value={charge} emphasis />
+        {estimate.time_on_battery_seconds != null ? (
+          <BatteryBlock label="Time on battery" value={formatDuration(estimate.time_on_battery_seconds)} />
+        ) : null}
+        {estimate.estimated_remaining_seconds != null ? (
+          <BatteryBlock label="Est. remaining" value={formatDuration(estimate.estimated_remaining_seconds, true)} />
+        ) : null}
+      </div>
+      {estimate.estimated_percent != null ? <Progress value={estimate.estimated_percent} /> : null}
+      {recommendation ? <p className="battery-advice">{recommendation}</p> : null}
+      {estimate.detail ? <p className="battery-note">{estimate.detail}</p> : null}
+      <div className="battery-stats">
+        <BatteryBlock
+          label="Current session"
+          value={stats.current_session_seconds == null ? "On external power" : formatDuration(stats.current_session_seconds)}
+          hint="Time on battery"
+        />
+        <BatteryBlock label="Today" value={formatDuration(stats.today_seconds)} hint="Battery runtime today" />
+        <BatteryBlock label="7 days" value={formatDuration(stats.week_seconds)} hint="Total battery runtime" />
+        <BatteryBlock
+          label="7 days"
+          value={stats.week_average_session_seconds == null ? "No completed sessions" : formatDuration(stats.week_average_session_seconds)}
+          hint="Average session length"
+        />
+        <BatteryBlock
+          label="Calibration"
+          value={stats.estimated_full_runtime_minutes == null ? "Not set" : formatDuration(stats.estimated_full_runtime_minutes * 60)}
+          hint="Estimated full-charge runtime"
+        />
+        <BatteryBlock label="Calibration" value={String(stats.calibration_sample_count)} hint="Calibrated discharge sessions" />
+      </div>
+      {samples.length > 0 ? <p className="battery-note">Calibration history: {samples.join(" · ")}</p> : null}
+      <p className="battery-note">{estimate.disclaimer}</p>
+    </div>
+  )
+}
+
+function BatteryBlock({
+  label,
+  value,
+  hint,
+  emphasis = false,
+}: {
+  label: string
+  value: string
+  hint?: string
+  emphasis?: boolean
+}) {
+  return (
+    <div className="battery-block">
+      <div className="battery-block-label">{label}</div>
+      {hint ? <div className="battery-block-hint">{hint}</div> : null}
+      <div className={emphasis ? "battery-block-value emphasis" : "battery-block-value"}>{value}</div>
+    </div>
   )
 }
 

@@ -37,12 +37,32 @@ One Python process serves the API, the terminal WebSocket, and the built fronten
 ## Features
 
 - Live system snapshot about every 2 seconds: CPU, per-core load, temperature, frequency, load average, memory, storage, network, uptime, OS, and Raspberry Pi model when Linux exposes it
-- Battery percent, charging state, and voltage when sysfs or psutil can see a battery. If there is no battery, the card says `Battery information unavailable` and the app keeps running
+- PiSugar S Plus charge timing is an estimate from external-power detection and a calibrated runtime. It is labeled estimated charge, not a fuel-gauge percentage. A sysfs or psutil battery is still shown when that hardware exists and the PiSugar pin cannot be read
 - Browser terminal backed by a Linux PTY, with resize, ANSI color, and the normal shell behavior for programs such as `htop`, `nano`, and `vim`
 - Local users in SQLite, Argon2id password hashes, and HttpOnly session cookies
 - Blue, Hacker Green, Purple, Red, and custom themes stored on the user and in the browser
 - systemd unit and install, update, and uninstall scripts
 - No Docker and no default password
+
+## PiSugar S Plus
+
+The S Plus 5000 mAh pack cannot report a real percentage. PiDeck estimates when to charge from how long the Pi has been unplugged.
+
+The [PiSugar S series documentation](https://docs.pisugar.com/docs/product-wiki/battery/pisugar-s-series) says that, with the auto-start switch on, GPIO3 (SCL) is low while external power is connected and high when it is not. That is a pin level, not an I2C register. The same page says this cannot be used together with I2C, because SCL stays low while external power is present. PiDeck does not read PiSugar 2/3 battery registers.
+
+PiDeck reads the pin with `gpioget` from the `gpiod` package, which uses the GPIO character device. It does not use `/sys/class/gpio`. If I2C is enabled, or the pin cannot be read, the reading is `external_power: null`. PiDeck does not invent a power state.
+
+On the Pi:
+
+1. Switch on PiSugar auto-start. Leave I2C off. `dtparam=i2c_arm=on` must not be set, and `/dev/i2c-1` must not be present.
+2. Install the GPIO tools: `sudo apt install gpiod`
+3. If `gpioget` says permission denied, add the PiDeck user to the `gpio` group and start a new login: `sudo usermod -aG gpio USER`
+4. In Settings, set **Full runtime** to a measured battery run, in minutes. `300` means 5 hours.
+5. Set **Full charge time** to how long external power must stay connected before the estimate resets to 100%. PiSugar does not publish a charge time for this S Plus pack, so leave it empty until you measure one. A shorter plug-in stays **Charge estimate uncertain**.
+
+The card uses these bands: above 40% normal, 20–40% low, 10–20% charge soon, below 10% critical. The colors come from the theme accent, warning, and danger variables.
+
+A discharge that starts after a completed full-charge time and ends because the Pi loses power is stored as a calibration sample. The runtime used for estimates is the median of the last five samples. One new sample can move that saved runtime by at most 25%. The custom button shares GPIO3, so a press can look like a power change while auto-start is on.
 
 ## Repository layout
 
@@ -322,7 +342,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 **The terminal disconnects immediately.** You are not logged in, the origin does not match, or four sessions are already open. On Windows this page is only a pipe-backed shell.
 
-**Battery says information is unavailable.** The Pi has no battery interface in sysfs and psutil did not report one. That is expected for a Pi on a power supply.
+**Battery says information is unavailable.** The Pi has no battery interface in sysfs and psutil did not report one. For a PiSugar S Plus, the card instead needs `gpiod`, auto-start switched on, and I2C left off. See [PiSugar S Plus](#pisugar-s-plus).
 
 **CPU temperature is unavailable.** This host has no `/sys/class/thermal/thermal_zone0/temp` reading and no psutil temperature sensor. The rest of the dashboard still works.
 

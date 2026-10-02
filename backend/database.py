@@ -40,6 +40,35 @@ CREATE TABLE IF NOT EXISTS user_settings (
     theme_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS battery_config (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    estimated_full_runtime_minutes REAL,
+    full_charge_time_minutes REAL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS battery_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    last_seen_at TEXT NOT NULL,
+    duration_seconds INTEGER,
+    estimated_start_percent REAL,
+    estimated_end_percent REAL,
+    power_source TEXT NOT NULL,
+    uncertain INTEGER NOT NULL DEFAULT 0,
+    start_reason TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_battery_sessions_open ON battery_sessions(ended_at);
+
+CREATE TABLE IF NOT EXISTS battery_calibration_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recorded_at TEXT NOT NULL,
+    duration_seconds INTEGER NOT NULL,
+    session_id INTEGER
+);
 """
 
 

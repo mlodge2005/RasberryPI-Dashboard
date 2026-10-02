@@ -23,6 +23,7 @@ from backend.models.schemas import (
     SystemSnapshot,
 )
 from backend.services.battery import read_battery
+from backend.services.battery_estimate import current_estimate
 from backend.services.tailscale import get_tailscale_info
 
 logger = logging.getLogger(__name__)
@@ -103,9 +104,21 @@ def collect_snapshot() -> SystemSnapshot:
             bytes_received=received,
         ),
         system=_system_info(),
-        battery=read_battery(),
+        battery=_battery(),
         collected_at=datetime.now(timezone.utc).isoformat(),
     )
+
+
+def _battery():
+    battery = read_battery()
+    try:
+        estimate = current_estimate()
+    except Exception:
+        logger.exception("Battery estimate failed")
+        return battery
+    if estimate is None:
+        return battery
+    return battery.model_copy(update={"estimate": estimate, "available": battery.available or estimate.tracking})
 
 
 def _tailscale_status(value: str) -> Literal["online", "offline", "unavailable"]:

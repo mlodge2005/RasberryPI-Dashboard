@@ -101,6 +101,54 @@ class SystemInfo(BaseModel):
     pi_model: str | None
 
 
+BatteryLevel = Literal["normal", "low", "charge_soon", "critical", "charging", "unknown"]
+
+
+class BatteryUsageStats(BaseModel):
+    current_session_seconds: float | None = None
+    today_seconds: float = 0
+    week_seconds: float = 0
+    week_average_session_seconds: float | None = None
+    week_session_count: int = 0
+    estimated_full_runtime_minutes: float | None = None
+    calibration_sample_count: int = 0
+    calibration_samples_minutes: list[float] = Field(default_factory=list)
+
+
+class BatteryEstimate(BaseModel):
+    """Time-based PiSugar S Plus estimate. This is not a fuel-gauge reading."""
+
+    model: str = "PiSugar S Plus"
+    external_power: bool | None = None
+    power_label: str
+    estimated_percent: float | None = None
+    estimate_uncertain: bool = False
+    time_on_battery_seconds: float | None = None
+    estimated_remaining_seconds: float | None = None
+    charge_recommended_in_seconds: float | None = None
+    level: BatteryLevel = "unknown"
+    advice: str | None = None
+    detail: str | None = None
+    tracking: bool = False
+    disclaimer: str
+    stats: BatteryUsageStats
+
+
+class BatterySettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    estimated_full_runtime_minutes: float | None = None
+    full_charge_time_minutes: float | None = None
+
+
+class BatterySettingsView(BaseModel):
+    estimated_full_runtime_minutes: float | None = None
+    full_charge_time_minutes: float | None = None
+    calibration_median_minutes: float | None = None
+    calibration_sample_count: int = 0
+    calibration_samples_minutes: list[float] = Field(default_factory=list)
+
+
 class BatteryInfo(BaseModel):
     available: bool
     percent: float | None = None
@@ -108,6 +156,7 @@ class BatteryInfo(BaseModel):
     status: str | None = None
     voltage: float | None = None
     message: str | None = None
+    estimate: BatteryEstimate | None = None
 
 
 class SystemSnapshot(BaseModel):

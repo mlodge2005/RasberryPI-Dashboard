@@ -28,6 +28,17 @@ export function formatUptime(seconds: number): string {
   return `${minutes}m`
 }
 
+export function formatDuration(seconds: number, approximate = false): string {
+  const totalMinutes = Math.max(0, Math.round(seconds / 60))
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  const prefix = approximate ? "~" : ""
+  if (hours > 0) {
+    return `${prefix}${hours}h ${String(minutes).padStart(2, "0")}m`
+  }
+  return `${prefix}${minutes}m`
+}
+
 export function formatWhen(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) {

@@ -1,6 +1,6 @@
-import { useState } from "react"
-import { ApiError, saveTheme } from "../api/client"
-import type { ThemePreset, ThemeSettings, UserProfile } from "../api/types"
+import { useEffect, useState } from "react"
+import { ApiError, getBatterySettings, saveBatterySettings, saveTheme } from "../api/client"
+import type { BatterySettings, ThemePreset, ThemeSettings, UserProfile } from "../api/types"
 import { useAuth } from "../auth/AuthContext"
 import { COLOR_FIELDS, PRESETS, themeStyle } from "../theme/themes"
 import { useTheme } from "../theme/ThemeContext"
@@ -120,7 +120,143 @@ export function SettingsPage({ user }: { user: UserProfile }) {
           </div>
         </div>
       </div>
+      <BatteryCalibration />
     </section>
+  )
+}
+
+function BatteryCalibration() {
+  const [runtime, setRuntime] = useState("")
+  const [charge, setCharge] = useState("")
+  const [saved, setSaved] = useState<BatterySettings | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    getBatterySettings()
+      .then((settings) => {
+        if (!active) {
+          return
+        }
+        setSaved(settings)
+        setRuntime(settings.estimated_full_runtime_minutes?.toString() ?? "")
+        setCharge(settings.full_charge_time_minutes?.toString() ?? "")
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setError(err instanceof ApiError ? err.message : "Could not load battery settings")
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const persist = async () => {
+    setBusy(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const next = await saveBatterySettings({
+        estimated_full_runtime_minutes: minutesOrNull(runtime),
+        full_charge_time_minutes: minutesOrNull(charge),
+      })
+      setSaved(next)
+      setRuntime(next.estimated_full_runtime_minutes?.toString() ?? "")
+      setCharge(next.full_charge_time_minutes?.toString() ?? "")
+      setMessage("Battery estimate saved")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the battery estimate")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const history = saved?.calibration_samples_minutes ?? []
+  return (
+    <div className="card settings-battery">
+      <div className="card-label">PiSugar S Plus estimate</div>
+      <p className="help-copy">
+        The S Plus cannot report a real percentage. Estimated charge is time on battery divided by a full runtime you
+        measure. Switch on the PiSugar auto-start function, and leave I2C off. GPIO3 is the I2C clock, and auto-start
+        cannot share it. A short time on external power does not count as a full charge.
+      </p>
+      <div className="battery-form">
+        <label className="field">
+          Full runtime (minutes)
+          <input
+            inputMode="numeric"
+            value={runtime}
+            aria-label="Full runtime in minutes"
+            placeholder="300"
+            onChange={(event) => setRuntime(event.target.value)}
+          />
+        </label>
+        <label className="field">
+          Full charge time (minutes)
+          <input
+            inputMode="numeric"
+            value={charge}
+            aria-label="Full charge time in minutes"
+            placeholder="Leave empty until you measure it"
+            onChange={(event) => setCharge(event.target.value)}
+          />
+        </label>
+      </div>
+      <p className="help-copy">
+        PiSugar does not publish a charge time for the S Plus 5000 mAh pack. After external power stays connected for
+        the full charge time, the estimate resets to 100%. Before that, the card says the charge estimate is uncertain.
+        A later full discharge, from that known full charge until the Pi loses power, updates the runtime. The value
+        used is the median of the last five runs, and one new run can move it by at most 25%.
+      </p>
+      {saved ? (
+        <dl className="kv">
+          <Row
+            label="Runtime used"
+            value={saved.estimated_full_runtime_minutes == null ? "Not set" : `${saved.estimated_full_runtime_minutes} min`}
+          />
+          <Row
+            label="Calibration median"
+            value={saved.calibration_median_minutes == null ? "No full discharges yet" : `${saved.calibration_median_minutes} min`}
+          />
+          <Row label="Calibrated sessions" value={String(saved.calibration_sample_count)} />
+          <Row label="Recent runtimes" value={history.length ? history.map((minutes) => `${minutes} min`).join(", ") : "None"} />
+        </dl>
+      ) : null}
+      <div className="button-row">
+        <button type="button" className="button" disabled={busy} onClick={() => void persist()}>
+          {busy ? "Saving" : "Save battery estimate"}
+        </button>
+      </div>
+      {message ? <p className="success-text">{message}</p> : null}
+      {error ? (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function minutesOrNull(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+    throw new Error("Enter minutes, or leave the field empty")
+  }
+  return Number(trimmed)
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="kv-row">
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
   )
 }
 

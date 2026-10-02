@@ -1,4 +1,4 @@
-import type { SystemSnapshot, ThemeSettings, UserProfile } from "./types"
+import type { BatterySettings, SystemSnapshot, ThemeSettings, UserProfile } from "./types"
 
 export class ApiError extends Error {
   status: number
@@ -62,6 +62,20 @@ export function saveTheme(theme: ThemeSettings): Promise<{ theme: ThemeSettings 
   return request<{ theme: ThemeSettings }>("/api/settings", {
     method: "PUT",
     body: JSON.stringify(theme),
+  })
+}
+
+export function getBatterySettings(): Promise<BatterySettings> {
+  return request<BatterySettings>("/api/settings/battery")
+}
+
+export function saveBatterySettings(settings: {
+  estimated_full_runtime_minutes: number | null
+  full_charge_time_minutes: number | null
+}): Promise<BatterySettings> {
+  return request<BatterySettings>("/api/settings/battery", {
+    method: "PUT",
+    body: JSON.stringify(settings),
   })
 }
 
