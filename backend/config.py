@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 import sys
 from functools import lru_cache
@@ -42,8 +43,16 @@ class Settings(BaseSettings):
     pideck_cookie_secure: str = "auto"
     pideck_dev: bool = False
     pideck_allow_non_localhost: bool = False
+    pideck_terminal_socket: str = "/run/pideck/terminal.sock"
 
-    @field_validator("pideck_host", "pideck_database", "pideck_session_secret", "pideck_cookie_secure", mode="before")
+    @field_validator(
+        "pideck_host",
+        "pideck_database",
+        "pideck_session_secret",
+        "pideck_cookie_secure",
+        "pideck_terminal_socket",
+        mode="before",
+    )
     @classmethod
     def strip_strings(cls, value: object) -> object:
         if isinstance(value, str):
@@ -103,15 +112,46 @@ def get_settings() -> Settings:
     return Settings()
 
 
+def secret_is_weak(secret: str) -> bool:
+    value = secret.strip()
+    return value.lower() in _WEAK_SECRETS or len(value) < 32
+
+
+def read_credential_secret() -> str | None:
+    """Return the systemd credential, if this process was given one.
+
+    The file is `$CREDENTIALS_DIRECTORY/session_secret`. A missing directory
+    means development or a unit that still uses the environment file. The
+    secret value is never logged.
+    """
+    directory = os.environ.get("CREDENTIALS_DIRECTORY", "").strip()
+    if not directory:
+        return None
+    path = Path(directory) / "session_secret"
+    if not path.exists():
+        return None
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise SystemExit("Could not read the systemd session_secret credential") from exc
+
+
 def resolve_session_secret(settings: Settings) -> str:
     """Return the HMAC secret used to store session tokens.
 
-    A placeholder from .env.example is accepted only while PIDECK_DEV is true,
-    and then replaced with an ephemeral secret so development can start quickly.
+    Production prefers the systemd credential and removes PIDECK_SESSION_SECRET
+    from the process environment so a child process cannot inherit it.
+    A placeholder from .env.example is accepted only while PIDECK_DEV is true.
     Production refuses to boot with a missing or well-known secret.
     """
-    secret = settings.pideck_session_secret.strip()
-    weak = secret.lower() in _WEAK_SECRETS or len(secret) < 32
+    credential = read_credential_secret()
+    if credential is not None:
+        os.environ.pop("PIDECK_SESSION_SECRET", None)
+        secret = credential
+        logger.info("Using the systemd session_secret credential")
+    else:
+        secret = settings.pideck_session_secret.strip()
+    weak = secret_is_weak(secret)
     if not weak:
         return secret
     if settings.pideck_dev and secret.lower() in {"", "replace-with-a-long-random-string"}:

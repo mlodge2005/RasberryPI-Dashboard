@@ -1,8 +1,9 @@
 """Interactive shell sessions.
 
-Linux uses a PTY so programs such as vim and htop work. Windows development
-gets a pipe-backed shell, which is not a terminal. The shell always starts as
-the account that launched PiDeck. There is no privilege escalation here.
+Production Linux sessions are owned by the pideck-term helper. This process
+only bridges bytes to its socket. Development on Linux can still open a local
+PTY when PIDECK_DEV is true and the helper socket is absent. Windows keeps a
+pipe-backed shell. There is no privilege escalation here.
 """
 
 from __future__ import annotations
@@ -12,11 +13,23 @@ import logging
 import os
 import queue
 import shutil
+import socket
 import subprocess
 import sys
 import threading
+from collections import deque
 from pathlib import Path
 from typing import Protocol
+
+from backend.services.terminal_protocol import (
+    KIND_ERROR,
+    KIND_EXIT,
+    KIND_INPUT,
+    KIND_OUTPUT,
+    FrameReader,
+    encode_frame,
+    encode_resize,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +70,24 @@ class TerminalSlots:
                 self._counts[user_id] = current - 1
 
 
-def open_shell() -> ShellSession:
-    if sys.platform == "win32":
+def build_shell(backend: str, helper_path: str) -> ShellSession:
+    if backend == "windows":
         return WindowsPipeShell()
-    return LinuxPtyShell()
+    if backend == "helper":
+        return UnixHelperShell(helper_path)
+    if backend == "local-pty":
+        return LinuxPtyShell()
+    raise RuntimeError("Terminal helper socket is not available")
+
+
+def open_shell() -> ShellSession:
+    path = terminal_socket_path()
+    backend = shell_backend(
+        platform=sys.platform,
+        dev=dev_terminal_fallback(),
+        helper_socket_present=os.path.exists(path),
+    )
+    return build_shell(backend, path)
 
 
 def parse_client_message(text: str) -> dict[str, object]:
@@ -96,14 +123,76 @@ def parse_client_message(text: str) -> dict[str, object]:
 
 
 def shell_environment() -> dict[str, str]:
-    """Copy the service environment without PiDeck secrets."""
+    """Copy the service environment without PiDeck secrets.
+
+    Development fallback only. The production helper does not use this.
+    """
     env = os.environ.copy()
     for key in list(env):
-        if key.upper().startswith("PIDECK_"):
+        if key.upper().startswith("PIDECK_") or key == "CREDENTIALS_DIRECTORY":
             env.pop(key, None)
     env["TERM"] = "xterm-256color"
     env["COLORTERM"] = "truecolor"
     return env
+
+
+_CHILD_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+_CHILD_KEYS = ("HOME", "USER", "LOGNAME", "SHELL", "PATH", "TERM", "COLORTERM", "LANG")
+
+
+def terminal_child_environment() -> dict[str, str]:
+    """Environment for the production shell. Nothing here comes from PiDeck."""
+    import getpass
+
+    account = getpass.getuser()
+    return {
+        "HOME": str(Path.home()),
+        "USER": account,
+        "LOGNAME": account,
+        "SHELL": "/bin/bash",
+        "PATH": _CHILD_PATH,
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LANG": "C.UTF-8",
+    }
+
+
+def dev_terminal_fallback() -> bool:
+    if os.environ.get("CREDENTIALS_DIRECTORY", "").strip():
+        return False
+    raw = os.environ.get("PIDECK_DEV")
+    if raw is not None and raw.strip() != "":
+        return raw.strip().lower() in {"1", "true", "yes"}
+    try:
+        from backend.config import get_settings
+
+        return bool(get_settings().pideck_dev)
+    except Exception:
+        return False
+
+
+def terminal_socket_path() -> str:
+    override = os.environ.get("PIDECK_TERMINAL_SOCKET", "").strip()
+    if override:
+        return override
+    try:
+        from backend.config import get_settings
+
+        configured = get_settings().pideck_terminal_socket.strip()
+    except Exception:
+        configured = ""
+    return configured or "/run/pideck/terminal.sock"
+
+
+def shell_backend(*, platform: str, dev: bool, helper_socket_present: bool) -> str:
+    """Choose windows, helper, local-pty, or unavailable. Never imply root."""
+    if platform == "win32":
+        return "windows"
+    if helper_socket_present:
+        return "helper"
+    if dev:
+        return "local-pty"
+    return "unavailable"
 
 
 def _home() -> str:
@@ -111,7 +200,7 @@ def _home() -> str:
 
 
 class LinuxPtyShell:
-    def __init__(self) -> None:
+    def __init__(self, *, env: dict[str, str] | None = None, cwd: str | None = None) -> None:
         import fcntl
         import pty
         import termios
@@ -127,8 +216,8 @@ class LinuxPtyShell:
             stdin=slave,
             stdout=slave,
             stderr=slave,
-            cwd=_home(),
-            env=shell_environment(),
+            cwd=cwd or _home(),
+            env=env if env is not None else shell_environment(),
             start_new_session=True,
             close_fds=True,
         )
@@ -214,6 +303,100 @@ class LinuxPtyShell:
             os.close(self._master)
         except OSError:
             pass
+
+
+_NEED_MORE = object()
+
+
+class UnixHelperShell:
+    """Client of the pideck-term helper. This process does not spawn a shell."""
+
+    def __init__(self, path: str | None = None, connection: socket.socket | None = None) -> None:
+        if connection is None:
+            if not path:
+                raise RuntimeError("Terminal helper socket is not available")
+            connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            connection.settimeout(5)
+            try:
+                connection.connect(path)
+            except OSError as exc:
+                connection.close()
+                raise RuntimeError("Terminal helper socket is not available") from exc
+        self._sock = connection
+        self._reader = FrameReader()
+        self._queue: deque[tuple[int, bytes]] = deque()
+        self._send_lock = threading.Lock()
+        self._pending_exit = False
+        self._closed = False
+
+    def read(self, timeout: float) -> bytes | None:
+        if self._closed:
+            return None
+        ready = self._take_output()
+        if ready is not _NEED_MORE:
+            return ready
+        self._sock.settimeout(timeout if timeout and timeout > 0 else 0.01)
+        try:
+            data = self._sock.recv(65536)
+        except TimeoutError:
+            return b""
+        except OSError:
+            return None
+        if not data:
+            return None
+        try:
+            self._queue.extend(self._reader.feed(data))
+        except ValueError:
+            return None
+        ready = self._take_output()
+        if ready is _NEED_MORE:
+            return b""
+        return ready
+
+    def _take_output(self) -> bytes | None | object:
+        while self._queue:
+            kind, payload = self._queue.popleft()
+            if kind == KIND_OUTPUT:
+                return payload
+            if kind == KIND_ERROR:
+                self._pending_exit = True
+                return payload or b"terminal helper error"
+            if kind == KIND_EXIT:
+                self._pending_exit = True
+                return None
+        if self._pending_exit:
+            return None
+        return _NEED_MORE
+
+    def write(self, data: bytes) -> None:
+        if self._closed or not data:
+            return
+        view = memoryview(data)
+        while view:
+            chunk = bytes(view[:65536])
+            view = view[len(chunk) :]
+            self._send(encode_frame(KIND_INPUT, chunk))
+
+    def resize(self, rows: int, cols: int) -> None:
+        if self._closed:
+            return
+        self._send(encode_resize(rows, cols))
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._sock.close()
+        except OSError:
+            pass
+
+    def _send(self, frame: bytes) -> None:
+        with self._send_lock:
+            try:
+                self._sock.sendall(frame)
+            except OSError:
+                return
 
 
 class WindowsPipeShell:

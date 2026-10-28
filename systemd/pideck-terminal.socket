@@ -1,0 +1,14 @@
+[Unit]
+Description=PiDeck browser terminal socket
+Before=pideck.service
+
+[Socket]
+ListenStream=/run/pideck/terminal.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=pideck
+FileDescriptorName=terminal
+Service=pideck-terminal.service
+
+[Install]
+WantedBy=sockets.target

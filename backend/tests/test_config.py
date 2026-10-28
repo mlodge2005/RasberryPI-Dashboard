@@ -37,12 +37,29 @@ def test_weak_secret_refused_in_production(monkeypatch: pytest.MonkeyPatch) -> N
 def test_dev_placeholder_secret_is_ephemeral(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PIDECK_SESSION_SECRET", "replace-with-a-long-random-string")
     monkeypatch.setenv("PIDECK_DEV", "true")
+    monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
     from backend.config import get_settings, resolve_session_secret
 
     get_settings.cache_clear()
     secret = resolve_session_secret(get_settings())
     assert len(secret) >= 32
     assert secret != "replace-with-a-long-random-string"
+
+
+def test_systemd_credential_replaces_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    credential_dir = tmp_path / "credentials"
+    credential_dir.mkdir()
+    (credential_dir / "session_secret").write_text("c" * 48 + "\n", encoding="utf-8")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credential_dir))
+    monkeypatch.setenv("PIDECK_SESSION_SECRET", "e" * 48)
+    monkeypatch.setenv("PIDECK_DEV", "false")
+    from backend.config import get_settings, resolve_session_secret
+
+    get_settings.cache_clear()
+    assert resolve_session_secret(get_settings()) == "c" * 48
+    assert "PIDECK_SESSION_SECRET" not in os.environ
 
 
 def test_static_path_traversal(tmp_path: Path) -> None:

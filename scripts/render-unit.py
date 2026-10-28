@@ -30,19 +30,30 @@ def absolute_directory(raw: str) -> Path:
 
 
 def render_unit(template: str, root: Path, user: str, group: str) -> str:
+    account = user.strip()
+    account_group = group.strip()
+    if account == "root" or account_group == "root":
+        raise SystemExit("Refusing to render a PiDeck unit that runs as root")
     app_dir = systemd_token(root.as_posix())
     rendered = template.replace("\r\n", "\n").replace("\r", "\n")
-    rendered = rendered.replace("__USER__", systemd_token(user))
-    rendered = rendered.replace("__GROUP__", systemd_token(group))
+    rendered = rendered.replace("__USER__", systemd_token(account))
+    rendered = rendered.replace("__GROUP__", systemd_token(account_group))
     rendered = rendered.replace("__APP_DIR__", app_dir)
     if any(token in rendered for token in ("__APP_DIR__", "__USER__", "__GROUP__")):
         raise SystemExit("unit template still contains an unreplaced placeholder")
     for line in rendered.splitlines():
-        if line.startswith(("WorkingDirectory=", "ExecStart=", "EnvironmentFile=")):
+        stripped = line.strip()
+        if stripped in {"User=root", "Group=root"}:
+            raise SystemExit("Refusing to render a PiDeck unit that runs as root")
+        if line.startswith(("WorkingDirectory=", "ExecStart=", "EnvironmentFile=", "ReadWritePaths=")):
             value = line.split("=", 1)[1].strip()
             path = value.split(" ", 1)[0]
             if not path.startswith("/"):
                 raise SystemExit(f"rendered unit path is not absolute: {line}")
+        if line.startswith("LoadCredential="):
+            source = line.split("=", 1)[1].split(":", 1)[-1]
+            if not source.startswith("/"):
+                raise SystemExit(f"rendered credential path is not absolute: {line}")
     if not rendered.endswith("\n"):
         rendered += "\n"
     return rendered
@@ -53,11 +64,19 @@ def main() -> int:
     parser.add_argument("--root", required=True, help="Absolute path to the PiDeck checkout")
     parser.add_argument("--user", required=True)
     parser.add_argument("--group", required=True)
+    parser.add_argument(
+        "--template",
+        default="systemd/pideck.service",
+        help="Unit template relative to the checkout",
+    )
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
     root = absolute_directory(args.root)
-    template_path = root / "systemd" / "pideck.service"
+    relative = Path(args.template)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise SystemExit("template must be a relative path inside the checkout")
+    template_path = root / relative
     template = template_path.read_text(encoding="utf-8")
     rendered = render_unit(template, root, args.user, args.group)
     args.output.write_text(rendered, encoding="utf-8", newline="\n")

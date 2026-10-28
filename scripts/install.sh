@@ -23,7 +23,9 @@ fi
 
 echo "PiDeck will be installed from:"
 echo "  $ROOT"
-echo "Service user: $(id -un)"
+echo "Installer account: $(id -un)"
+echo "Service account: pideck"
+echo "Terminal account: pideck-term"
 
 require_python() {
   if ! command -v python3 >/dev/null 2>&1; then
@@ -116,57 +118,78 @@ echo "Building the frontend"
 )
 
 if [[ ! -f "$ROOT/.env" ]]; then
-  secret="$("$PYTHON" -c 'import secrets; print(secrets.token_urlsafe(48))')"
-  cat >"$ROOT/.env" <<EOF
+  cat >"$ROOT/.env" <<'EOF'
 PIDECK_HOST=127.0.0.1
 PIDECK_PORT=8080
 PIDECK_DATABASE=./data/pideck.db
-PIDECK_SESSION_SECRET=${secret}
 PIDECK_SESSION_HOURS=24
 PIDECK_COOKIE_SECURE=auto
 PIDECK_DEV=false
 PIDECK_ALLOW_NON_LOCALHOST=false
+PIDECK_TERMINAL_SOCKET=/run/pideck/terminal.sock
 EOF
   chmod 600 "$ROOT/.env"
-  echo "Wrote .env with a generated session secret."
+  echo "Wrote .env without a session secret."
 else
   echo "Keeping the existing .env file."
 fi
 
+# shellcheck source=ensure-accounts.sh
+source "$ROOT/scripts/ensure-accounts.sh"
+ensure_pideck_accounts
+term_home="$(getent passwd pideck-term | cut -d: -f6)"
+if [[ "$term_home" != "/var/lib/pideck-term" ]]; then
+  echo "pideck-term home is $term_home. The terminal unit requires /var/lib/pideck-term."
+  echo "Refusing to continue. No unit was replaced and no secret was moved."
+  exit 1
+fi
+sudo mkdir -p /etc/pideck
+sudo chmod 755 /etc/pideck
+
+if [[ ! -s /etc/pideck/session.secret ]]; then
+  relocate="$(sudo "$PYTHON" "$ROOT/scripts/privilege_migrate.py" apply-secret --env "$ROOT/.env" --credential /etc/pideck/session.secret)" || true
+  echo "Session secret status: ${relocate:-failed}"
+  if [[ "$relocate" == "missing" ]]; then
+    secret="$("$PYTHON" -c 'import secrets; print(secrets.token_urlsafe(48))')"
+    printf '%s\n' "$secret" | sudo tee /etc/pideck/session.secret >/dev/null
+    unset secret
+    echo "Wrote a new session secret to /etc/pideck/session.secret."
+  elif [[ "$relocate" != "moved" && "$relocate" != "kept-existing" ]]; then
+    echo "Refusing to replace or invent a session secret."
+    exit 1
+  fi
+else
+  relocate="$(sudo "$PYTHON" "$ROOT/scripts/privilege_migrate.py" apply-secret --env "$ROOT/.env" --credential /etc/pideck/session.secret)" || true
+  echo "Session secret status: $relocate"
+fi
+sudo chown root:root /etc/pideck/session.secret
+sudo chmod 600 /etc/pideck/session.secret
+own_runtime_files "$ROOT"
+
 mkdir -p "$ROOT/data"
-user_count="$("$PYTHON" -c 'from backend.database import init_db, count_users; init_db(); print(count_users())')"
+user_count="$(sudo -u pideck --chdir "$ROOT" "$PYTHON" -c 'from backend.database import init_db, count_users; init_db(); print(count_users())')"
 if [[ "$user_count" == "0" ]]; then
   echo "Create the first PiDeck login. There is no default password."
-  "$PYTHON" -m backend.create_user
+  sudo -u pideck --chdir "$ROOT" "$PYTHON" -m backend.create_user
 else
   echo "A PiDeck user already exists. Skipping account creation."
 fi
+own_runtime_files "$ROOT"
 
 if command -v systemctl >/dev/null 2>&1; then
-  unit_tmp="$(mktemp)"
-  "$PYTHON" "$ROOT/scripts/render-unit.py" \
-    --root "$ROOT" \
-    --user "$(id -un)" \
-    --group "$(id -gn)" \
-    --output "$unit_tmp"
-  echo "Rendered service paths:"
-  grep -E '^(WorkingDirectory|ExecStart|EnvironmentFile)=' "$unit_tmp"
-  echo "Installing the systemd service (sudo will prompt if needed)"
-  sudo cp "$unit_tmp" /etc/systemd/system/pideck.service
-  rm -f "$unit_tmp"
-  sudo systemctl daemon-reload
-  sudo systemctl enable pideck.service
-  sudo systemctl restart pideck.service
+  echo "Installing the systemd units (sudo will prompt if needed)"
+  install_pideck_units "$ROOT" "$PYTHON"
+  restart_pideck_units
   echo
   if systemctl is-active --quiet pideck.service; then
-    echo "PiDeck is running."
+    echo "PiDeck is running as pideck."
   else
     echo "PiDeck did not stay running. Recent logs:"
   fi
   systemctl --no-pager --full status pideck.service || true
 else
   echo "Start it manually from the repository root:"
-  echo "  $PYTHON -m backend"
+  echo "  sudo -u pideck --chdir \"$ROOT\" $PYTHON -m backend"
 fi
 
 cat <<'EOF'

@@ -115,13 +115,22 @@ def init_db() -> None:
     _restrict_db_file(get_settings().database_path)
 
 
+def database_permission_paths(path: Path) -> tuple[Path, Path, Path]:
+    """The database file plus the SQLite WAL and SHM siblings."""
+    text = str(path)
+    return (path, Path(text + "-wal"), Path(text + "-shm"))
+
+
 def _restrict_db_file(path: Path) -> None:
-    if sys.platform == "win32" or not path.exists():
+    if sys.platform == "win32":
         return
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+    for candidate in database_permission_paths(path):
+        if not candidate.exists():
+            continue
+        try:
+            os.chmod(candidate, 0o600)
+        except OSError:
+            pass
 
 
 def count_users() -> int:

@@ -1,0 +1,2 @@
+# Runtime directory for the PiDeck terminal socket. Recreated at boot.
+d /run/pideck 0755 root pideck -

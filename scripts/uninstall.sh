@@ -9,20 +9,25 @@ fi
 
 if command -v systemctl >/dev/null 2>&1; then
   sudo systemctl disable --now pideck.service || true
-  sudo rm -f /etc/systemd/system/pideck.service
+  sudo systemctl disable --now pideck-terminal.service pideck-terminal.socket || true
+  sudo rm -f /etc/systemd/system/pideck.service \
+    /etc/systemd/system/pideck-terminal.service \
+    /etc/systemd/system/pideck-terminal.socket \
+    /etc/tmpfiles.d/pideck.conf
   sudo systemctl daemon-reload
-  echo "Removed the pideck systemd service."
+  echo "Removed the pideck systemd units."
 else
   echo "systemctl was not found. Nothing was removed."
 fi
 
 cat <<'EOF'
 
-The application directory, virtual environment, .env, and SQLite database were left in place.
+The application directory, virtual environment, .env, credential file, and SQLite database were left in place.
 To delete local files yourself, from the repository root:
 
   rm -rf backend/.venv frontend/node_modules frontend/dist
   rm -f .env data/pideck.db data/pideck.db-wal data/pideck.db-shm
+  sudo rm -f /etc/pideck/session.secret
 
 This script does not change Tailscale. Inspect the proxy, then disable PiDeck's handler:
 

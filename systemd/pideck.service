@@ -9,16 +9,21 @@ StartLimitBurst=5
 Type=simple
 User=__USER__
 Group=__GROUP__
+SupplementaryGroups=gpio
 WorkingDirectory=__APP_DIR__
 EnvironmentFile=__APP_DIR__/.env
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+LoadCredential=session_secret:/etc/pideck/session.secret
 ExecStart=__APP_DIR__/backend/.venv/bin/python -m backend
 Restart=on-failure
 RestartSec=3
-
-# The browser terminal is a normal shell for this user.
-# Do not enable NoNewPrivileges, ProtectSystem, or PrivateTmp:
-# those settings break sudo and ordinary shell behavior.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=no
+PrivateTmp=yes
+ReadWritePaths=__APP_DIR__/data
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

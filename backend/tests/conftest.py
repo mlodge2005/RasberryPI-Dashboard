@@ -7,9 +7,10 @@ from backend.tests.constants import ORIGIN, PASSWORD
 
 
 @pytest.fixture(autouse=True)
-def _isolated_settings():
+def _isolated_settings(monkeypatch):
     from backend.config import get_settings
 
+    monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -17,6 +18,7 @@ def _isolated_settings():
 
 @pytest.fixture
 def app(tmp_path, monkeypatch):
+    monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
     monkeypatch.setenv("PIDECK_DATABASE", str(tmp_path / "pideck.db"))
     monkeypatch.setenv("PIDECK_SESSION_SECRET", "test-session-secret-should-be-long-enough!!")
     monkeypatch.setenv("PIDECK_DEV", "true")

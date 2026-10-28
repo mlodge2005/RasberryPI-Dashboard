@@ -104,11 +104,37 @@ def test_parse_client_message_limits() -> None:
 
 
 def test_shell_environment_strips_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
-    from backend.services.terminal import shell_environment
+    from backend.services.terminal import shell_environment, terminal_child_environment
 
     monkeypatch.setenv("PIDECK_SESSION_SECRET", "super-secret-value")
     monkeypatch.setenv("PIDECK_DATABASE", "./data/pideck.db")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", "/run/credentials/pideck.service")
     env = shell_environment()
     assert "PIDECK_SESSION_SECRET" not in env
     assert "PIDECK_DATABASE" not in env
+    assert "CREDENTIALS_DIRECTORY" not in env
     assert env["TERM"] == "xterm-256color"
+
+    child = terminal_child_environment()
+    assert set(child) == {"HOME", "USER", "LOGNAME", "SHELL", "PATH", "TERM", "COLORTERM", "LANG"}
+    assert "super-secret-value" not in " ".join(child.values())
+    assert "PIDECK_" not in " ".join(child)
+
+
+def test_shell_backend_refuses_a_local_shell_in_production() -> None:
+    from backend.services.terminal import build_shell, shell_backend
+
+    assert shell_backend(platform="linux", dev=False, helper_socket_present=False) == "unavailable"
+    assert shell_backend(platform="linux", dev=True, helper_socket_present=False) == "local-pty"
+    assert shell_backend(platform="linux", dev=False, helper_socket_present=True) == "helper"
+    assert shell_backend(platform="win32", dev=False, helper_socket_present=True) == "windows"
+    with pytest.raises(RuntimeError):
+        build_shell("unavailable", "/run/pideck/terminal.sock")
+
+
+def test_systemd_credentials_disable_the_local_pty(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.services.terminal import dev_terminal_fallback
+
+    monkeypatch.setenv("PIDECK_DEV", "true")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", "/run/credentials/pideck.service")
+    assert dev_terminal_fallback() is False

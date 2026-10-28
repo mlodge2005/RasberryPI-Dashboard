@@ -5,6 +5,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+if [[ "$(id -u)" -eq 0 ]]; then
+  echo "Do not run update.sh as root."
+  echo "Run it as admin. It uses sudo only to refresh the systemd units."
+  exit 1
+fi
+
 if [[ ! -x "$ROOT/backend/.venv/bin/pip" ]]; then
   echo "Python virtual environment not found. Run ./scripts/install.sh first."
   exit 1
@@ -31,31 +37,33 @@ echo "Rebuilding the frontend"
 )
 
 if [[ -f /etc/systemd/system/pideck.service ]]; then
-  echo "Refreshing pideck.service"
-  unit_tmp="$(mktemp)"
-  "$ROOT/backend/.venv/bin/python" "$ROOT/scripts/render-unit.py" \
-    --root "$ROOT" \
-    --user "$(id -un)" \
-    --group "$(id -gn)" \
-    --output "$unit_tmp"
-  echo "Rendered service paths:"
-  grep -E '^(WorkingDirectory|ExecStart|EnvironmentFile)=' "$unit_tmp"
-  sudo cp "$unit_tmp" /etc/systemd/system/pideck.service
-  rm -f "$unit_tmp"
-  sudo systemctl daemon-reload
-  echo "Restarting pideck.service"
-  sudo systemctl restart pideck.service
-  sleep 1
-  if systemctl is-active --quiet pideck.service; then
-    echo "PiDeck restarted successfully."
-    systemctl --no-pager --full status pideck.service || true
-  else
-    echo "PiDeck failed to restart."
-    systemctl --no-pager --full status pideck.service || true
-    echo "Logs: journalctl -u pideck -n 80 --no-pager"
-    exit 1
-  fi
+  if ! id pideck >/dev/null 2>&1 || ! id pideck-term >/dev/null 2>&1 || [[ ! -s /etc/pideck/session.secret ]]; then
+  echo "Build finished. pideck.service was not replaced or restarted."
+  echo "Run ./scripts/migrate-privileges.sh to leave root, then re-run ./scripts/update.sh."
+  exit 1
+fi
+
+# shellcheck source=ensure-accounts.sh
+source "$ROOT/scripts/ensure-accounts.sh"
+install_pideck_units "$ROOT" "$ROOT/backend/.venv/bin/python"
+echo "Restarting pideck.service"
+if ! restart_pideck_units; then
+  echo "PiDeck failed to restart."
+  echo "Logs: journalctl -u pideck -n 80 --no-pager"
+  exit 1
+fi
+sleep 1
+if systemctl is-active --quiet pideck.service && systemctl is-active --quiet pideck-terminal.service; then
+  echo "PiDeck restarted successfully."
+  systemctl --no-pager --full status pideck.service || true
+else
+  echo "PiDeck failed to restart."
+  systemctl --no-pager --full status pideck.service || true
+  systemctl --no-pager --full status pideck-terminal.service || true
+  echo "Logs: journalctl -u pideck -n 80 --no-pager"
+  exit 1
+fi
 else
   echo "systemd service pideck.service is not installed."
-  echo "The build finished. Start PiDeck with: backend/.venv/bin/python -m backend"
+  echo "The build finished. On the Pi, run ./scripts/migrate-privileges.sh or ./scripts/install.sh."
 fi
