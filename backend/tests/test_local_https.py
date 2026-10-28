@@ -32,7 +32,9 @@ def test_caddyfile_binds_only_the_hotspot_address() -> None:
     assert "0.0.0.0" not in text
     assert "wlan1" not in text
     listeners = [line.strip() for line in text.splitlines() if "://" in line or line.strip().startswith("bind ")]
-    assert listeners == ["https://10.42.0.1:8443 {"]
+    assert listeners == ["https://10.42.0.1:8443 {", "bind 10.42.0.1"]
+    assert "*:8443" not in text
+    assert "bind *" not in text
 
 
 def test_local_proxy_unit_is_independent_of_the_dashboard() -> None:
@@ -47,6 +49,8 @@ def test_local_proxy_unit_is_independent_of_the_dashboard() -> None:
     assert "Requires=pideck.service" not in unit
     assert "PrivateNetwork" not in unit
     assert "AmbientCapabilities" not in unit
+    assert "Environment=HOME=/var/lib/pideck-local/state\n" in unit
+    assert "ReadWritePaths=/var/lib/pideck-local/state\n" in unit
     assert "pideck-local" not in dashboard
     assert "0.0.0.0" not in unit
 
@@ -70,6 +74,9 @@ def test_local_https_scripts_do_not_touch_other_services() -> None:
     assert "systemctl enable" not in rollback_commands
     assert "systemctl restart pideck" not in rollback_commands
     assert '[[ -f /etc/systemd/system/pideck-local.service ]]' in update
+    assert "prepare_caddy_state" in update
+    assert update.index("prepare_caddy_state") < update.index("systemctl restart pideck-local.service")
+    assert "prepare_caddy_state" in install
     assert "systemctl restart pideck-local.service" in update
 
 
@@ -130,6 +137,115 @@ def test_hotspot_origin_and_secure_cookie(client: TestClient, password_hash: str
         cookies={"pideck_session": session},
     )
     assert logged_out.status_code == 200
+
+
+def test_frontend_and_caddy_storage_repairs_are_narrow() -> None:
+    accounts = (ROOT / "scripts" / "ensure-accounts.sh").read_text(encoding="utf-8")
+    repair = accounts.split("repair_frontend_build_ownership()", 1)[1].split("\npublish_frontend_dist()", 1)[0]
+    state = accounts.split("prepare_caddy_state()", 1)[1]
+    assert repair.count("chown -R") == 1
+    assert '"$dir"' in repair
+    assert "frontend/node_modules" in repair
+    assert "frontend/dist" in repair
+    assert "Refusing to repair frontend ownership as root." in repair
+    for line in repair.splitlines():
+        if "chown" in line:
+            assert "$dir" in line
+            assert "$root\"" not in line
+    assert "chmod 755" in accounts
+    assert "chmod 644" in accounts
+    assert "chown caddy:caddy /var/lib/pideck-local/state" in state
+    assert "ca.key" not in state
+    dashboard_install = (ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
+    update = (ROOT / "scripts" / "update.sh").read_text(encoding="utf-8")
+    for text in (dashboard_install, update):
+        assert "sudo npm" not in text
+        assert text.index("repair_frontend_build_ownership") < text.index("npm ci")
+        assert text.index("npm run build") < text.index("publish_frontend_dist")
+
+
+_REPAIR_HARNESS = r"""
+set -euo pipefail
+source "$1"
+log="$2"
+mode="$3"
+: > "$log"
+FIND_FOREIGN=1
+MOCK_USER=admin
+MOCK_GROUP=admin
+id() {
+  if [[ "${1:-}" == "caddy" ]]; then
+    return 0
+  fi
+  case "${1:-}" in
+    -un) printf '%s\n' "$MOCK_USER" ;;
+    -gn) printf '%s\n' "$MOCK_GROUP" ;;
+    *) return 1 ;;
+  esac
+}
+sudo() {
+  printf 'sudo %s\n' "$*" >> "$log"
+  if [[ "$1" == "find" && "$2" == *node_modules && "$FIND_FOREIGN" == "1" ]]; then
+    printf '%s\n' "$2/root-owned"
+  fi
+}
+fail() { printf '%s\n' "$1" >&2; exit 1; }
+
+case "$mode" in
+  repair)
+    repo=/tmp/pideck-fe-$$
+    rm -rf "$repo"
+    mkdir -p "$repo/frontend/node_modules" "$repo/frontend/dist" "$repo/data"
+    repair_frontend_build_ownership "$repo"
+    grep -q "sudo chown -R -- admin:admin $repo/frontend/node_modules$" "$log" || fail "node_modules was not repaired"
+    grep -q "sudo chown -R -- admin:admin $repo/frontend/dist$" "$log" && fail "already-owned dist was reowned"
+    grep -q "sudo chown -R -- admin:admin $repo$" "$log" && fail "repository root was reowned"
+    grep -q "$repo/data" "$log" && fail "database directory was included"
+    FIND_FOREIGN=0
+    : > "$log"
+    repair_frontend_build_ownership "$repo"
+    grep -q "chown -R" "$log" && fail "second repair changed ownership"
+    MOCK_USER=root
+    if repair_frontend_build_ownership "$repo"; then
+      fail "root was allowed to repair ownership"
+    fi
+    grep -q "chown" "$log" && fail "root repair changed ownership"
+    rm -rf "$repo"
+    ;;
+  caddy-state)
+    prepare_caddy_state
+    grep -qx "sudo mkdir -p /var/lib/pideck-local/state" "$log" || fail "state directory was not created"
+    grep -qx "sudo chown caddy:caddy /var/lib/pideck-local/state" "$log" || fail "state directory owner is wrong"
+    grep -qx "sudo chmod 750 /var/lib/pideck-local/state" "$log" || fail "state directory mode is wrong"
+    grep -qx "sudo chown caddy:caddy /var/lib/pideck-local" "$log" && fail "certificate directory was given to caddy"
+    grep -q "ca.key" "$log" && fail "CA key was included"
+    grep -q "chown -R" "$log" && fail "state ownership change was recursive"
+    ;;
+  *)
+    fail "unknown mode $mode"
+    ;;
+esac
+exit 0
+"""
+
+
+@pytest.mark.parametrize("mode", ["repair", "caddy-state"])
+def test_frontend_repair_and_caddy_state_behavior(tmp_path: Path, mode: str) -> None:
+    bash = _bash()
+    if bash is None:
+        pytest.skip("bash is not installed")
+    harness = tmp_path / "harness.sh"
+    log = tmp_path / "commands.log"
+    harness.write_text(_REPAIR_HARNESS, encoding="utf-8", newline="\n")
+    completed = subprocess.run(
+        [str(bash), str(harness), str(ROOT / "scripts" / "ensure-accounts.sh"), str(log), mode],
+        capture_output=True,
+        text=True,
+    )
+    details = completed.stderr + completed.stdout
+    if log.is_file():
+        details += "\n--- log ---\n" + log.read_text(encoding="utf-8", errors="replace")
+    assert completed.returncode == 0, details
 
 
 def _bash() -> Path | None:

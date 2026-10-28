@@ -8,9 +8,9 @@ Wants=network-online.target
 Type=simple
 User=caddy
 Group=caddy
-Environment=XDG_DATA_HOME=/var/lib/pideck-local
-Environment=XDG_CONFIG_HOME=/var/lib/pideck-local
-Environment=HOME=/var/lib/pideck-local
+Environment=XDG_DATA_HOME=/var/lib/pideck-local/state
+Environment=XDG_CONFIG_HOME=/var/lib/pideck-local/state
+Environment=HOME=/var/lib/pideck-local/state
 ExecStart=/usr/bin/caddy run --config /etc/pideck/Caddyfile --adapter caddyfile
 ExecReload=/usr/bin/caddy reload --config /etc/pideck/Caddyfile --adapter caddyfile
 TimeoutStopSec=5s
@@ -21,7 +21,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/var/lib/pideck-local
+ReadWritePaths=/var/lib/pideck-local/state
 UMask=0077
 
 [Install]

@@ -26,6 +26,9 @@ echo "Updating Python dependencies"
 "$ROOT/backend/.venv/bin/pip" install -r "$ROOT/backend/requirements.txt"
 
 echo "Rebuilding the frontend"
+# shellcheck source=ensure-accounts.sh
+source "$ROOT/scripts/ensure-accounts.sh"
+repair_frontend_build_ownership "$ROOT"
 (
   cd "$ROOT/frontend"
   if [[ -f package-lock.json ]]; then
@@ -35,6 +38,7 @@ echo "Rebuilding the frontend"
   fi
   npm run build
 )
+publish_frontend_dist "$ROOT"
 
 if [[ -f /etc/systemd/system/pideck.service ]]; then
   if ! id pideck >/dev/null 2>&1 || ! id pideck-term >/dev/null 2>&1 || [[ ! -s /etc/pideck/session.secret ]]; then
@@ -66,6 +70,7 @@ else
 fi
 if [[ -f /etc/systemd/system/pideck-local.service ]]; then
   echo "Refreshing the hotspot HTTPS proxy."
+  prepare_caddy_state
   sudo cp "$ROOT/caddy/Caddyfile" /etc/pideck/Caddyfile
   sudo cp "$ROOT/systemd/pideck-local.service" /etc/systemd/system/pideck-local.service
   sudo systemctl daemon-reload

@@ -278,7 +278,7 @@ Tailscale Serve stays pointed at `http://127.0.0.1:8080`. A second path serves t
 
 Caddy is the local proxy. It terminates TLS, forwards WebSocket upgrades, and can listen on one address. The dashboard process is unchanged, so login, themes, and the terminal use the same cookies and origin checks. `PIDECK_COOKIE_SECURE=auto` marks the cookie Secure when Caddy sends `X-Forwarded-Proto: https`. The browser Host is left as `10.42.0.1:8443`, which is what the origin check compares.
 
-The Debian `caddy` package also ships `caddy.service`, which listens on port 80. Pi-hole already uses that port. `install-local-https.sh` disables `caddy.service` and starts `pideck-local.service` instead. That unit binds only `10.42.0.1:8443`. It does not listen on port 53, port 80, `0.0.0.0`, or the upstream Wi-Fi address. It does not change hotspot, DHCP, NAT, or Tailscale settings.
+The Debian `caddy` package also ships `caddy.service`, which listens on port 80. Pi-hole already uses that port. `install-local-https.sh` disables `caddy.service` and starts `pideck-local.service` instead. The site block uses `bind 10.42.0.1`, so the listener is `10.42.0.1:8443` and not `*:8443`. It does not listen on port 53, port 80, `0.0.0.0`, or the upstream Wi-Fi address. Caddy may write only under `/var/lib/pideck-local/state`. The certificate private keys stay outside that directory. The installer does not change hotspot, DHCP, NAT, or Tailscale settings.
 
 The certificate is a private CA stored on the Pi. Phones trust `ca.crt` once. After that, the hotspot site works with no upstream Wi-Fi, no public DNS, and no Tailscale. The leaf certificate lasts 825 days. Renewal keeps the same CA.
 
@@ -346,7 +346,7 @@ On the Pi, from the clone:
 ./scripts/update.sh
 ```
 
-`update.sh` fast-forwards git, installs Python requirements, rebuilds the frontend, restarts `pideck.service`, and prints whether the restart succeeded.
+`update.sh` fast-forwards git, installs Python requirements, rebuilds the frontend, restarts `pideck.service`, and prints whether the restart succeeded. Before `npm ci`, it gives `admin` ownership of `frontend/node_modules` and `frontend/dist` when those generated directories contain files owned by someone else. It does not change ownership of the rest of the repository. After the build, compiled files in `frontend/dist` are mode `644` and directories are mode `755`, so `pideck` can read them.
 
 It does not delete the database or rewrite user rows. Startup only runs `CREATE TABLE IF NOT EXISTS`.
 

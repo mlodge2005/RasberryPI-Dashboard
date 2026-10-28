@@ -107,6 +107,9 @@ if ! "$ROOT/backend/.venv/bin/pip" install -r "$ROOT/backend/requirements.txt"; 
 fi
 
 echo "Building the frontend"
+# shellcheck source=ensure-accounts.sh
+source "$ROOT/scripts/ensure-accounts.sh"
+repair_frontend_build_ownership "$ROOT"
 (
   cd "$ROOT/frontend"
   if [[ -f package-lock.json ]]; then
@@ -116,6 +119,7 @@ echo "Building the frontend"
   fi
   npm run build
 )
+publish_frontend_dist "$ROOT"
 
 if [[ ! -f "$ROOT/.env" ]]; then
   cat >"$ROOT/.env" <<'EOF'

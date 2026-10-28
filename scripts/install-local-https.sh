@@ -40,6 +40,9 @@ sudo chown root:caddy /var/lib/pideck-local/cert.pem /var/lib/pideck-local/key.p
 sudo chmod 600 /var/lib/pideck-local/ca.key
 sudo chmod 644 /var/lib/pideck-local/ca.crt /var/lib/pideck-local/cert.pem
 sudo chmod 640 /var/lib/pideck-local/key.pem
+# shellcheck source=ensure-accounts.sh
+source "$ROOT/scripts/ensure-accounts.sh"
+prepare_caddy_state
 
 sudo cp "$ROOT/caddy/Caddyfile" /etc/pideck/Caddyfile
 sudo cp "$ROOT/systemd/pideck-local.service" /etc/systemd/system/pideck-local.service

@@ -164,3 +164,39 @@ own_runtime_files() {
     own_one_database "$root" "$defaults"
   fi
 }
+
+repair_frontend_build_ownership() {
+  local root="$1"
+  local owner group dir foreign
+  owner="$(id -un)"
+  group="$(id -gn)"
+  if [[ "$owner" == "root" ]]; then
+    echo "Refusing to repair frontend ownership as root."
+    return 1
+  fi
+  for dir in "$root/frontend/node_modules" "$root/frontend/dist"; do
+    [[ -d "$dir" ]] || continue
+    foreign="$(sudo find "$dir" -xdev \( ! -user "$owner" -o ! -group "$group" \) -print -quit)"
+    if [[ -n "$foreign" ]]; then
+      echo "Repairing ownership of $dir"
+      sudo chown -R -- "$owner:$group" "$dir"
+    fi
+  done
+}
+
+publish_frontend_dist() {
+  local dist="$1/frontend/dist"
+  [[ -d "$dist" ]] || return 0
+  find "$dist" -xdev -type d -exec chmod 755 {} +
+  find "$dist" -xdev -type f -exec chmod 644 {} +
+}
+
+prepare_caddy_state() {
+  if ! id caddy >/dev/null 2>&1; then
+    echo "The caddy user is missing. Refusing to change certificate storage."
+    return 1
+  fi
+  sudo mkdir -p /var/lib/pideck-local/state
+  sudo chown caddy:caddy /var/lib/pideck-local/state
+  sudo chmod 750 /var/lib/pideck-local/state
+}
