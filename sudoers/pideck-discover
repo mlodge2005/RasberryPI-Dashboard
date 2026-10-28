@@ -1,4 +1,6 @@
 # pideck-discover may read wlan0 associations and nothing else.
 # Raspberry Pi OS installs the hostapd package binary at /usr/sbin/hostapd_cli.
-Defaults:pideck-discover env_reset
+# !use_pty: this command runs from systemd without a terminal. Debian's
+# default use_pty can make non-interactive sudo fail before hostapd_cli starts.
+Defaults:pideck-discover env_reset, !use_pty
 pideck-discover ALL=(root) NOPASSWD: /usr/sbin/hostapd_cli -i wlan0 all_sta

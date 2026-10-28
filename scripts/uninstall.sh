@@ -12,6 +12,7 @@ if command -v systemctl >/dev/null 2>&1; then
   sudo systemctl disable --now pideck-terminal.service pideck-terminal.socket || true
   sudo systemctl disable --now pideck-wifi.service pideck-wifi.socket || true
   sudo systemctl disable --now pideck-discover.service pideck-discover.socket || true
+  sudo systemctl disable --now pideck-deauth.service pideck-deauth.socket || true
   sudo systemctl disable --now pideck-local.service || true
   sudo rm -f /etc/systemd/system/pideck.service \
     /etc/systemd/system/pideck-terminal.service \
@@ -20,7 +21,11 @@ if command -v systemctl >/dev/null 2>&1; then
     /etc/systemd/system/pideck-wifi.socket \
     /etc/systemd/system/pideck-discover.service \
     /etc/systemd/system/pideck-discover.socket \
+    /etc/systemd/system/pideck-deauth.service \
+    /etc/systemd/system/pideck-deauth.socket \
     /etc/sudoers.d/pideck-discover \
+    /etc/sudoers.d/pideck-deauth \
+    /usr/local/lib/pideck/disconnect-client \
     /etc/polkit-1/rules.d/50-pideck-wifi.rules \
     /etc/systemd/system/pideck-local.service \
     /etc/pideck/Caddyfile \

@@ -155,12 +155,15 @@ export type WifiScan = {
 
 export type DeviceStatus = "online" | "offline" | "unknown"
 
+export type DeviceKind = "phone" | "laptop" | "tablet" | "desktop" | "tv" | "watch" | "generic"
+
 export type DeviceRecord = {
   mac: string
   alias: string
   hostname: string
   ip_address: string | null
   status: DeviceStatus
+  kind: DeviceKind
   first_seen: string
   last_seen: string
   authorized: boolean | null
@@ -174,12 +177,18 @@ export type DeviceRecord = {
 
 export type DeviceInventory = {
   devices: DeviceRecord[]
-  connected: number
+  connected: number | null
   known: number
   unidentified: number
   hostapd: "ok" | "unavailable"
   dhcp: "ok" | "unavailable"
   neighbors: "ok" | "unavailable"
+  hostapd_error: string
+}
+
+export type DeviceDisconnectResult = {
+  detail: string
+  inventory: DeviceInventory
 }
 
 export type SystemSnapshot = {

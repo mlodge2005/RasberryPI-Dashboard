@@ -851,6 +851,11 @@ code {
     width: 100%;
   }
 
+  .page-header .button {
+    width: 100%;
+  }
+}
+
 .wifi-actions .button,
 .wifi-form .button {
   flex: 1;
@@ -870,7 +875,9 @@ code {
 }
 
 .device-stats span,
-.device-sources {
+.device-sources,
+.device-section-note,
+.device-secondary {
   color: var(--text-muted);
 }
 
@@ -879,62 +886,297 @@ code {
   letter-spacing: -0.03em;
 }
 
-.device-sources {
+.device-sources,
+.device-section-note {
   margin: 12px 0 0;
-}
-
-.device-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.device-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
-  gap: 12px 16px;
-  align-items: start;
-  padding: 14px 0;
-  border-top: 1px solid var(--border);
-}
-
-.device-identity {
-  min-width: 0;
-}
-
-.device-identity strong {
-  display: block;
-  overflow-wrap: anywhere;
-}
-
-.device-alias {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.device-alias label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--text-muted);
-}
-
-.device-alias input {
-  width: 100%;
 }
 
 .page-header .button {
   align-self: center;
 }
 
-  .device-row {
+.device-board {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.device-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.device-section-heading h2 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.device-section-heading span {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 16px;
+}
+
+.device-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 42%),
+    var(--panel);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.device-card.status-online {
+  border-left-color: var(--success);
+}
+
+.device-card.status-offline {
+  border-left-color: color-mix(in srgb, var(--text) 28%, transparent);
+}
+
+.device-card.status-unknown {
+  border-left-color: var(--warning);
+}
+
+.device-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.device-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.device-names {
+  min-width: 0;
+}
+
+.device-names h3,
+.device-secondary {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.device-names h3 {
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.device-secondary {
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.device-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 12px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--background));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.device-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.device-menu-wrap {
+  position: relative;
+  flex: none;
+}
+
+.icon-button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--background) 70%, transparent);
+  color: var(--text);
+}
+
+.icon-button:hover,
+.device-menu button:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--accent);
+}
+
+.device-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.device-menu button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.status-pill.status-online {
+  color: var(--success);
+}
+
+.status-pill.status-online .status-dot {
+  background: var(--success);
+  box-shadow: 0 0 10px var(--success);
+}
+
+.status-pill.status-offline {
+  color: var(--text-muted);
+}
+
+.status-pill.status-unknown {
+  color: var(--warning);
+}
+
+.status-pill.status-unknown .status-dot {
+  background: var(--warning);
+}
+
+.device-facts {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+}
+
+.device-facts dt {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.device-facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.device-details {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.device-dialog {
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.device-dialog h2 {
+  margin: 0;
+  letter-spacing: -0.03em;
+}
+
+.device-dialog p {
+  margin: 0;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.button-danger {
+  background: var(--danger);
+  color: #1a0c10;
+}
+
+@media (max-width: 720px) {
+  .device-grid {
     grid-template-columns: 1fr;
   }
 
-  .device-alias,
-  .device-alias .button,
-  .page-header .button {
+  .device-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .dialog-actions,
+  .dialog-actions .button {
     width: 100%;
+  }
+
+  .dialog-actions {
+    flex-direction: column-reverse;
   }
 }
 

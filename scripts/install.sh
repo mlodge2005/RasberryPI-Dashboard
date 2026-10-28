@@ -28,6 +28,7 @@ echo "Service account: pideck"
 echo "Terminal account: pideck-term"
 echo "Wi-Fi account: pideck-wifi"
 echo "Discovery account: pideck-discover"
+echo "Disconnect account: pideck-deauth"
 
 require_python() {
   if ! command -v python3 >/dev/null 2>&1; then

@@ -98,7 +98,7 @@ def test_deploy_scripts_reject_root_and_do_not_widen_sudo() -> None:
     assert "grant_parent_execute" in update
     assert install.index("grant_parent_execute") < install.index("apply-secret")
     assert update.index("grant_parent_execute") < update.index("install_pideck_units")
-    assert "u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x" in accounts
+    assert "u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x,u:pideck-deauth:--x" in accounts
     assert "setfacl -R" not in accounts
     assert "setfacl -d" not in accounts
     assert "command -v setfacl" in accounts
@@ -192,10 +192,10 @@ case "$mode" in
   acl-private-parent)
     MODE_ADMIN=750
     MODE_HOME=755
-    GETFACL_BODY=$'user:pideck:--x\nuser:pideck-term:--x\nuser:pideck-wifi:--x\nuser:pideck-discover:--x'
+    GETFACL_BODY=$'user:pideck:--x\nuser:pideck-term:--x\nuser:pideck-wifi:--x\nuser:pideck-discover:--x\nuser:pideck-deauth:--x'
     grant_parent_execute /home/admin/RasberryPI-Dashboard
     grant_parent_execute /home/admin/RasberryPI-Dashboard
-    count="$(grep -c 'setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x -- /home/admin$' "$log" || true)"
+    count="$(grep -c 'setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x,u:pideck-deauth:--x -- /home/admin$' "$log" || true)"
     [[ "$count" -eq 2 ]] || fail "expected two identical ACLs on /home/admin, got $count"
     grep -q '/home$' "$log" && fail "world-executable /home was changed"
     grep -q 'setfacl .* -- /$' "$log" && fail "filesystem root was changed"
@@ -205,19 +205,19 @@ case "$mode" in
   acl-both-private)
     MODE_ADMIN=700
     MODE_HOME=700
-    GETFACL_BODY=$'user:pideck:--x\nuser:pideck-term:--x\nuser:pideck-wifi:--x\nuser:pideck-discover:--x'
+    GETFACL_BODY=$'user:pideck:--x\nuser:pideck-term:--x\nuser:pideck-wifi:--x\nuser:pideck-discover:--x\nuser:pideck-deauth:--x'
     grant_parent_execute /home/admin/RasberryPI-Dashboard
-    grep -q 'setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x -- /home/admin$' "$log" || fail "admin home was skipped"
-    grep -q 'setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x -- /home$' "$log" || fail "private /home was skipped"
+    grep -q 'setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x,u:pideck-deauth:--x -- /home/admin$' "$log" || fail "admin home was skipped"
+    grep -q 'setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x,u:pideck-deauth:--x -- /home$' "$log" || fail "private /home was skipped"
     grep -q 'setfacl .* -- /$' "$log" && fail "filesystem root was changed"
     ;;
   acl-gap)
     MODE_ADMIN=751
     MODE_HOME=700
-    GETFACL_BODY=$'user:pideck:--x\nuser:pideck-term:--x\nuser:pideck-wifi:--x\nuser:pideck-discover:--x'
+    GETFACL_BODY=$'user:pideck:--x\nuser:pideck-term:--x\nuser:pideck-wifi:--x\nuser:pideck-discover:--x\nuser:pideck-deauth:--x'
     grant_parent_execute /home/admin/RasberryPI-Dashboard
     grep -q '/home/admin$' "$log" && fail "already-traversable parent received an ACL"
-    grep -q 'setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x -- /home$' "$log" || fail "private ancestor was skipped"
+    grep -q 'setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x,u:pideck-deauth:--x -- /home$' "$log" || fail "private ancestor was skipped"
     ;;
   acl-missing)
     old_path="$PATH"

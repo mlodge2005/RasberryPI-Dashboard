@@ -12,6 +12,7 @@ from backend.discover_helper import (
     main,
     run_command,
 )
+from backend.services.discovery import SourceSnapshot
 from backend.services.discovery_parse import (
     build_inventory,
     parse_dhcp_leases,
@@ -96,8 +97,11 @@ def test_merge_marks_only_associated_devices_online() -> None:
     assert "aa:bb:cc:dd:ee:09" not in by_mac
     assert inventory.connected == 2
     assert inventory.known == 5
+    assert inventory.hostapd_error == ""
     phones = [item for item in inventory.devices if item.hostname == "phone"]
     assert {item.mac for item in phones} == {"aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:05"}
+    assert all(item.kind == "phone" for item in phones)
+    assert by_mac["aa:bb:cc:dd:ee:02"].kind == "generic"
     assert inventory.unidentified == 3
 
 
@@ -113,18 +117,27 @@ def test_failed_hostapd_does_not_invent_offline_devices() -> None:
     second, kept = build_inventory(stored, None, parse_dhcp_leases(LEASES), [], "2026-10-28T01:00:00+00:00")
     again = next(item for item in second.devices if item.mac == "aa:bb:cc:dd:ee:01")
     assert again.status == "unknown"
+    assert again.status != "offline"
     assert again.last_seen == seen
     assert second.hostapd == "unavailable"
-    assert second.connected == 0
+    assert second.connected is None
+    assert second.hostapd_error == "Association data is unavailable."
+    assert all(item.status == "unknown" for item in second.devices)
     assert all(item.last_seen == "2026-10-28T00:00:00+00:00" for item in kept)
 
 
 class Sources:
-    def __init__(self, hostapd: str | None, dhcp: str | None, neighbors: str | None) -> None:
-        self.values = (hostapd, dhcp, neighbors)
+    def __init__(
+        self,
+        hostapd: str | None,
+        dhcp: str | None,
+        neighbors: str | None,
+        error: str = "",
+    ) -> None:
+        self.snapshot = SourceSnapshot(hostapd, dhcp, neighbors, error)
 
-    def read(self) -> tuple[str | None, str | None, str | None]:
-        return self.values
+    def read(self) -> SourceSnapshot:
+        return self.snapshot
 
 
 def test_inventory_persists_and_alias_survives_refresh(auth_client) -> None:
@@ -168,8 +181,10 @@ def test_missing_sources_leave_known_devices_in_place(auth_client) -> None:
     assert body["dhcp"] == "unavailable"
     assert body["neighbors"] == "unavailable"
     assert body["known"] == 5
-    assert body["connected"] == 0
+    assert body["connected"] is None
+    assert body["hostapd_error"] == "Association data is unavailable."
     assert all(item["status"] == "unknown" for item in body["devices"])
+    assert all(item["status"] != "offline" for item in body["devices"])
 
 
 def test_device_routes_require_a_session(client) -> None:
@@ -232,6 +247,9 @@ def test_discovery_unit_and_sudoers_stay_read_only() -> None:
     assert "InaccessiblePaths=/etc/pideck /var/lib/pideck\n" in unit
     assert "wlan1" not in unit
     assert "deauthenticate" not in unit.lower()
+    assert "PrivateTmp=yes" not in unit
+    assert "PrivateTmp=no\n" in unit
+    assert "/tmp" in unit
     assert "ListenStream=/run/pideck/discover.sock\n" in socket
     assert "SocketMode=0600\n" in socket
     assert "SocketUser=pideck\n" in socket
@@ -245,7 +263,26 @@ def test_discovery_unit_and_sudoers_stay_read_only() -> None:
     assert "/bin/sh" not in sudoers
     assert "/bin/bash" not in sudoers
     assert "deauthenticate" not in sudoers
+    assert "!use_pty" in sudoers
     assert "wlan1" not in sudoers
+    deauth_unit = (root / "systemd" / "pideck-deauth.service").read_text(encoding="utf-8")
+    deauth_socket = (root / "systemd" / "pideck-deauth.socket").read_text(encoding="utf-8")
+    deauth_sudoers = (root / "sudoers" / "pideck-deauth").read_text(encoding="utf-8")
+    assert "User=pideck-deauth\n" in deauth_unit
+    assert "NoNewPrivileges=" not in deauth_unit
+    assert "PrivateTmp=no\n" in deauth_unit
+    assert "PrivateTmp=yes" not in deauth_unit
+    assert "all_sta" not in deauth_unit
+    assert "ListenStream=/run/pideck/deauth.sock\n" in deauth_socket
+    assert "SocketMode=0600\n" in deauth_socket
+    assert "SocketUser=pideck\n" in deauth_socket
+    assert "FileDescriptorName=deauth\n" in deauth_socket
+    assert "*" not in deauth_sudoers
+    assert "hostapd_cli" not in deauth_sudoers
+    assert "NOPASSWD: ALL" not in deauth_sudoers
+    assert "/bin/sh" not in deauth_sudoers
+    assert "deauthenticate" not in deauth_sudoers
+    assert "disconnect-client [0-9a-f][0-9a-f]:" in deauth_sudoers
     assert ALLOWED_COMMANDS == (
         ["/usr/bin/sudo", "-n", "/usr/sbin/hostapd_cli", "-i", "wlan0", "all_sta"],
     )
@@ -253,6 +290,8 @@ def test_discovery_unit_and_sudoers_stay_read_only() -> None:
     assert accounts.index("The discovery sudoers file is missing") < accounts.index("sudo visudo -cf")
     assert accounts.index("sudo visudo -cf") < accounts.index('sudo cp "$unit_tmp"')
     assert accounts.index("install_discovery_sudoers") < accounts.index("systemctl enable")
+    assert accounts.index("install_deauth_sudoers") < accounts.index("systemctl enable")
+    assert accounts.index("install_deauth_wrapper") < accounts.index("systemctl enable")
     commands = "\n".join(line for line in accounts.splitlines() if not line.strip().startswith("#"))
     for forbidden in (
         "systemctl restart hostapd",
