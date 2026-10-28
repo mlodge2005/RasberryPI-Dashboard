@@ -1,7 +1,9 @@
 """Parsers for hotspot association, DHCP leases, and the neighbor table.
 
-A device is online only when hostapd lists its MAC. A DHCP lease or a
-neighbor entry supplies an address and a hostname, and nothing more.
+A device is Connected only when hostapd lists its MAC. A DHCP lease or a
+neighbor entry supplies an address and a hostname, and nothing more. When
+hostapd cannot be read, every device stays Unknown and the connected count
+is omitted instead of reported as zero.
 """
 
 from __future__ import annotations
@@ -9,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from backend.models.schemas import DeviceInventory, DeviceRecord
+from backend.models.schemas import DeviceInventory, DeviceKind, DeviceRecord
 
 HOTSPOT_IFACE = "wlan0"
 _MAC = re.compile(r"^[0-9a-f]{2}(?::[0-9a-f]{2}){5}$")
@@ -57,6 +59,51 @@ def normalize_mac(value: str) -> str | None:
     if _MAC.fullmatch(text):
         return text
     return None
+
+
+def unicast_mac(value: str) -> str | None:
+    """Return a canonical MAC that addresses one station.
+
+    Multicast and broadcast addresses are rejected. hostapd treats
+    ff:ff:ff:ff:ff:ff as every associated client. Surrounding whitespace is
+    rejected so a padded value cannot widen the command that sudo runs.
+    """
+    if value != value.strip() or any(char.isspace() for char in value):
+        return None
+    mac = normalize_mac(value)
+    if mac is None:
+        return None
+    if int(mac[:2], 16) & 0x01:
+        return None
+    return mac
+
+
+_KIND_WORDS: tuple[tuple[DeviceKind, tuple[str, ...]], ...] = (
+    ("phone", ("iphone", "android", "pixel", "galaxy", "phone")),
+    ("tablet", ("ipad", "tablet")),
+    ("watch", ("watch",)),
+    ("tv", ("chromecast", "roku", "bravia", "firetv", "tv")),
+    ("laptop", ("macbook", "laptop", "notebook")),
+    ("desktop", ("imac", "desktop", "workstation")),
+)
+
+
+def device_kind(alias: str, hostname: str) -> DeviceKind:
+    haystack = f" {alias} {hostname} ".lower()
+    for kind, words in _KIND_WORDS:
+        for word in words:
+            if re.search(rf"(^|[^a-z0-9]){re.escape(word)}([^a-z0-9]|$)", haystack):
+                return kind
+    return "generic"
+
+
+def public_hostapd_error(value: str) -> str:
+    text = " ".join(value.split())
+    if not text.startswith("Association data is unavailable"):
+        return "Association data is unavailable."
+    if len(text) > 200 or any(ord(char) < 32 or ord(char) == 127 for char in text):
+        return "Association data is unavailable."
+    return text
 
 
 def _ipv4(value: str) -> str | None:
@@ -178,11 +225,13 @@ def build_inventory(
     leases: list[Lease] | None,
     neighbors: list[Neighbor] | None,
     now: str,
+    hostapd_error: str = "",
 ) -> tuple[DeviceInventory, list[StoredDevice]]:
     """Join every source by MAC and return the API view plus rows to persist.
 
     `None` for a source means that source could not be read. A failed hostapd
     read leaves association unknown and does not rewrite last-seen times.
+    The connected count is None in that case so callers cannot show zero.
     """
     rows = {item.mac: item for item in stored}
     lease_by_mac = {item.mac: item for item in leases or []}
@@ -240,6 +289,7 @@ def build_inventory(
                 hostname=row.hostname,
                 ip_address=row.ip_address or None,
                 status=status,
+                kind=device_kind(row.alias, row.hostname),
                 first_seen=row.first_seen,
                 last_seen=row.last_seen,
                 authorized=station.authorized if station else None,
@@ -254,13 +304,15 @@ def build_inventory(
     devices.sort(key=lambda item: item.mac)
     devices.sort(key=lambda item: item.last_seen, reverse=True)
     devices.sort(key=lambda item: item.status != "online")
+    association_known = stations is not None
     inventory = DeviceInventory(
         devices=devices,
-        connected=sum(1 for item in devices if item.status == "online"),
+        connected=sum(1 for item in devices if item.status == "online") if association_known else None,
         known=len(devices),
         unidentified=sum(1 for item in devices if not item.alias and not item.hostname),
-        hostapd="ok" if stations is not None else "unavailable",
+        hostapd="ok" if association_known else "unavailable",
         dhcp="ok" if leases is not None else "unavailable",
         neighbors="ok" if neighbors is not None else "unavailable",
+        hostapd_error="" if association_known else public_hostapd_error(hostapd_error),
     )
     return inventory, list(rows.values())

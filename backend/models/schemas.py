@@ -239,12 +239,16 @@ class WifiConnectRequest(BaseModel):
     saved: bool = False
 
 
+DeviceKind = Literal["phone", "laptop", "tablet", "desktop", "tv", "watch", "generic"]
+
+
 class DeviceRecord(BaseModel):
     mac: str
     alias: str
     hostname: str
     ip_address: str | None = None
     status: Literal["online", "offline", "unknown"]
+    kind: DeviceKind = "generic"
     first_seen: str
     last_seen: str
     authorized: bool | None = None
@@ -258,12 +262,20 @@ class DeviceRecord(BaseModel):
 
 class DeviceInventory(BaseModel):
     devices: list[DeviceRecord]
-    connected: int
+    connected: int | None
     known: int
     unidentified: int
     hostapd: Literal["ok", "unavailable"]
     dhcp: Literal["ok", "unavailable"]
     neighbors: Literal["ok", "unavailable"]
+    hostapd_error: str = ""
+
+
+class DeviceDisconnectResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    detail: str
+    inventory: DeviceInventory
 
 
 class DeviceAliasRequest(BaseModel):

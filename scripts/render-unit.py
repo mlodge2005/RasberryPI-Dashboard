@@ -22,7 +22,11 @@ def systemd_token(value: str) -> str:
 
 
 def absolute_directory(raw: str) -> Path:
-    path = Path(raw.replace("\r", "").strip()).expanduser().resolve()
+    cleaned = raw.replace("\r", "").strip()
+    expanded = str(Path(cleaned).expanduser()) if cleaned.startswith("~") else cleaned
+    if not expanded.startswith("/"):
+        raise SystemExit(f"PiDeck install path is not an absolute Linux path: {raw}")
+    path = Path(expanded).resolve()
     text = path.as_posix() if path.drive == "" else str(path)
     if path.drive or not text.startswith("/"):
         raise SystemExit(f"PiDeck install path is not an absolute Linux path: {raw}")

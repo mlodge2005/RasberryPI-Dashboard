@@ -1,5 +1,6 @@
 import type {
   BatterySettings,
+  DeviceDisconnectResult,
   DeviceInventory,
   SystemSnapshot,
   ThemeSettings,
@@ -118,6 +119,13 @@ export function saveDeviceAlias(mac: string, alias: string): Promise<DeviceInven
   return request<DeviceInventory>(`/api/devices/${encodeURIComponent(mac)}`, {
     method: "PUT",
     body: JSON.stringify({ alias }),
+  })
+}
+
+export function disconnectDevice(mac: string): Promise<DeviceDisconnectResult> {
+  return request<DeviceDisconnectResult>(`/api/devices/${encodeURIComponent(mac)}/disconnect`, {
+    method: "POST",
+    body: "{}",
   })
 }
 

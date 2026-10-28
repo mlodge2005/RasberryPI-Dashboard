@@ -36,6 +36,11 @@ ensure_pideck_accounts() {
   else
     sudo useradd --system --create-home --home-dir /var/lib/pideck-discover --shell "$nologin" --user-group pideck-discover
   fi
+  if id pideck-deauth >/dev/null 2>&1; then
+    sudo usermod -s "$nologin" pideck-deauth
+  else
+    sudo useradd --system --create-home --home-dir /var/lib/pideck-deauth --shell "$nologin" --user-group pideck-deauth
+  fi
 }
 
 install_discovery_sudoers() {
@@ -68,17 +73,68 @@ install_discovery_sudoers() {
   fi
 }
 
+install_deauth_sudoers() {
+  local root="$1"
+  local source="$root/sudoers/pideck-deauth"
+  local wrapper="$root/scripts/disconnect-client"
+  local spec="pideck-deauth ALL=(root) NOPASSWD: /usr/local/lib/pideck/disconnect-client [0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]"
+  if [[ ! -f "$source" || ! -f "$wrapper" ]]; then
+    echo "The disconnect helper files are missing."
+    echo "The disconnect helper was not enabled. No network services were restarted."
+    return 1
+  fi
+  if grep -q '[*]' "$source" || grep -Eq '/bin/sh|/bin/bash|hostapd_cli|NOPASSWD: ALL' "$source"; then
+    echo "The disconnect sudoers file is not limited to one validated client."
+    echo "The disconnect helper was not enabled. No network services were restarted."
+    return 1
+  fi
+  if ! grep -qx "$spec" "$source"; then
+    echo "The disconnect sudoers file is not the single-client disconnect command."
+    echo "The disconnect helper was not enabled. No network services were restarted."
+    return 1
+  fi
+  if grep -q '[*]' "$wrapper" || grep -Eq 'os\.system|shell=True|subprocess|/bin/sh|/bin/bash' "$wrapper"; then
+    echo "The disconnect program is not a fixed single-client operation."
+    echo "The disconnect helper was not enabled. No network services were restarted."
+    return 1
+  fi
+  if ! grep -q 'deauthenticate' "$wrapper"; then
+    echo "The disconnect program does not deauthenticate one client."
+    echo "The disconnect helper was not enabled. No network services were restarted."
+    return 1
+  fi
+  if ! command -v visudo >/dev/null 2>&1; then
+    echo "visudo is required to validate the disconnect sudoers file."
+    echo "The disconnect helper was not enabled. No network services were restarted."
+    return 1
+  fi
+  if ! sudo visudo -cf "$source"; then
+    echo "The disconnect sudoers file was rejected. The disconnect helper was not enabled. No network services were restarted."
+    return 1
+  fi
+}
+
+install_deauth_wrapper() {
+  local root="$1"
+  sudo install -d -o root -g root -m 755 /usr/local/lib/pideck
+  sudo install -o root -g root -m 755 "$root/scripts/disconnect-client" /usr/local/lib/pideck/disconnect-client
+}
+
 install_pideck_units() {
   local root="$1"
   local python="$2"
-  local unit_tmp term_tmp wifi_tmp discover_tmp
+  local unit_tmp term_tmp wifi_tmp discover_tmp deauth_tmp
   if ! install_discovery_sudoers "$root"; then
+    return 1
+  fi
+  if ! install_deauth_sudoers "$root"; then
     return 1
   fi
   unit_tmp="$(mktemp)"
   term_tmp="$(mktemp)"
   wifi_tmp="$(mktemp)"
   discover_tmp="$(mktemp)"
+  deauth_tmp="$(mktemp)"
   "$python" "$root/scripts/render-unit.py" \
     --root "$root" \
     --user pideck \
@@ -111,6 +167,14 @@ install_pideck_units() {
     --output "$discover_tmp"
   echo "Rendered discovery helper unit:"
   grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$discover_tmp"
+  "$python" "$root/scripts/render-unit.py" \
+    --root "$root" \
+    --user pideck-deauth \
+    --group pideck-deauth \
+    --template systemd/pideck-deauth.service \
+    --output "$deauth_tmp"
+  echo "Rendered disconnect helper unit:"
+  grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$deauth_tmp"
   sudo cp "$root/systemd/pideck.tmpfiles" /etc/tmpfiles.d/pideck.conf
   sudo systemd-tmpfiles --create /etc/tmpfiles.d/pideck.conf
   sudo cp "$unit_tmp" /etc/systemd/system/pideck.service
@@ -120,21 +184,27 @@ install_pideck_units() {
   sudo cp "$root/systemd/pideck-wifi.socket" /etc/systemd/system/pideck-wifi.socket
   sudo cp "$discover_tmp" /etc/systemd/system/pideck-discover.service
   sudo cp "$root/systemd/pideck-discover.socket" /etc/systemd/system/pideck-discover.socket
+  sudo cp "$deauth_tmp" /etc/systemd/system/pideck-deauth.service
+  sudo cp "$root/systemd/pideck-deauth.socket" /etc/systemd/system/pideck-deauth.socket
   if [[ ! -d /etc/polkit-1/rules.d ]]; then
     echo "polkit rules directory is missing. The Wi-Fi helper cannot be authorized."
-    rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp" "$discover_tmp"
+    rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp" "$discover_tmp" "$deauth_tmp"
     return 1
   fi
   sudo cp "$root/polkit/50-pideck-wifi.rules" /etc/polkit-1/rules.d/50-pideck-wifi.rules
   sudo chown root:root /etc/polkit-1/rules.d/50-pideck-wifi.rules
   sudo chmod 644 /etc/polkit-1/rules.d/50-pideck-wifi.rules
-  rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp" "$discover_tmp"
+  rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp" "$discover_tmp" "$deauth_tmp"
   sudo cp "$root/sudoers/pideck-discover" /etc/sudoers.d/pideck-discover
   sudo chown root:root /etc/sudoers.d/pideck-discover
   sudo chmod 440 /etc/sudoers.d/pideck-discover
+  sudo cp "$root/sudoers/pideck-deauth" /etc/sudoers.d/pideck-deauth
+  sudo chown root:root /etc/sudoers.d/pideck-deauth
+  sudo chmod 440 /etc/sudoers.d/pideck-deauth
+  install_deauth_wrapper "$root"
   grant_discover_lease_read
   sudo systemctl daemon-reload
-  sudo systemctl enable pideck.service pideck-terminal.socket pideck-terminal.service pideck-wifi.socket pideck-wifi.service pideck-discover.socket pideck-discover.service
+  sudo systemctl enable pideck.service pideck-terminal.socket pideck-terminal.service pideck-wifi.socket pideck-wifi.service pideck-discover.socket pideck-discover.service pideck-deauth.socket pideck-deauth.service
 }
 
 grant_discover_lease_read() {
@@ -155,6 +225,7 @@ grant_discover_lease_read() {
 restart_pideck_units() {
   sudo systemctl restart pideck-wifi.socket pideck-wifi.service || return 1
   sudo systemctl restart pideck-discover.socket pideck-discover.service || return 1
+  sudo systemctl restart pideck-deauth.socket pideck-deauth.service || return 1
   sudo systemctl restart pideck-terminal.socket pideck-terminal.service || return 1
   sudo systemctl restart pideck.service || return 1
 }
@@ -172,14 +243,14 @@ grant_parent_execute() {
     mode="$(stat -c %a "$dir")"
     other=$((8#${mode: -1} & 1))
     if [[ "$other" -eq 0 ]]; then
-      echo "Granting traverse-only access on $dir for pideck, pideck-term, pideck-wifi, and pideck-discover."
-      if ! sudo setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x -- "$dir"; then
+      echo "Granting traverse-only access on $dir for pideck, pideck-term, pideck-wifi, pideck-discover, and pideck-deauth."
+      if ! sudo setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x,u:pideck-deauth:--x -- "$dir"; then
         echo "Could not set a traverse-only ACL on $dir."
         echo "Refusing to change home-directory mode bits."
         return 1
       fi
       acl="$(sudo getfacl -- "$dir")"
-      for user in pideck pideck-term pideck-wifi pideck-discover; do
+      for user in pideck pideck-term pideck-wifi pideck-discover pideck-deauth; do
         if ! grep -qx "user:${user}:--x" <<<"$acl"; then
           echo "Traverse ACL for ${user} was not recorded on $dir."
           echo "Refusing to change home-directory mode bits."

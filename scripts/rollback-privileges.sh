@@ -31,7 +31,7 @@ if [[ ! -f "$BACKUP/pideck.service.bak" ]]; then
 fi
 
 echo "Restoring the previous pideck.service and .env backup."
-echo "Stopping only the PiDeck terminal, Wi-Fi, and discovery helpers. No other services are restarted."
+echo "Stopping only the PiDeck terminal, Wi-Fi, discovery, and disconnect helpers. No other services are restarted."
 
 sudo cp -a "$BACKUP/pideck.service.bak" /etc/systemd/system/pideck.service
 if [[ -f "$BACKUP/env.bak" ]]; then
@@ -44,6 +44,7 @@ fi
 sudo systemctl disable --now pideck-terminal.service pideck-terminal.socket || true
 sudo systemctl disable --now pideck-wifi.service pideck-wifi.socket || true
 sudo systemctl disable --now pideck-discover.service pideck-discover.socket || true
+sudo systemctl disable --now pideck-deauth.service pideck-deauth.socket || true
 sudo systemctl daemon-reload
 if ! sudo systemctl restart pideck.service; then
   echo "pideck.service did not restart from the backup unit."
