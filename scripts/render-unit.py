@@ -54,6 +54,10 @@ def render_unit(template: str, root: Path, user: str, group: str) -> str:
             source = line.split("=", 1)[1].split(":", 1)[-1]
             if not source.startswith("/"):
                 raise SystemExit(f"rendered credential path is not absolute: {line}")
+        if line.startswith("Environment=PYTHONPATH="):
+            value = line.split("=", 2)[-1].strip()
+            if not value.startswith("/"):
+                raise SystemExit(f"rendered PYTHONPATH is not absolute: {line}")
     if not rendered.endswith("\n"):
         rendered += "\n"
     return rendered

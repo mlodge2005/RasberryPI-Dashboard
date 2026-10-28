@@ -62,18 +62,105 @@ restart_pideck_units() {
   sudo systemctl restart pideck.service || return 1
 }
 
+grant_parent_execute() {
+  local root="$1"
+  if ! command -v setfacl >/dev/null 2>&1 || ! command -v getfacl >/dev/null 2>&1; then
+    echo "setfacl and getfacl are required. Install the acl package, then re-run."
+    echo "Refusing to change home-directory mode bits."
+    return 1
+  fi
+  local dir mode other user acl
+  dir="$(dirname "$root")"
+  while [[ -n "$dir" && "$dir" != "/" ]]; do
+    mode="$(stat -c %a "$dir")"
+    other=$((8#${mode: -1} & 1))
+    if [[ "$other" -eq 0 ]]; then
+      echo "Granting traverse-only access on $dir for pideck and pideck-term."
+      if ! sudo setfacl -m u:pideck:--x,u:pideck-term:--x -- "$dir"; then
+        echo "Could not set a traverse-only ACL on $dir."
+        echo "Refusing to change home-directory mode bits."
+        return 1
+      fi
+      acl="$(sudo getfacl -- "$dir")"
+      for user in pideck pideck-term; do
+        if ! grep -qx "user:${user}:--x" <<<"$acl"; then
+          echo "Traverse ACL for ${user} was not recorded on $dir."
+          echo "Refusing to change home-directory mode bits."
+          return 1
+        fi
+      done
+    fi
+    dir="$(dirname "$dir")"
+  done
+}
+
+database_path_for_root() {
+  local root="$1"
+  local configured="./data/pideck.db"
+  local line="" value resolved
+  if sudo test -f "$root/.env"; then
+    line="$(sudo grep -E '^[[:space:]]*PIDECK_DATABASE=' "$root/.env" | tail -n 1 || true)"
+  fi
+  if [[ -n "$line" ]]; then
+    value="${line#*=}"
+    value="${value%$'\r'}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    case "$value" in
+      \"*\") value="${value:1:${#value}-2}" ;;
+      \'*\') value="${value:1:${#value}-2}" ;;
+    esac
+    if [[ "$value" == *..* ]]; then
+      echo "Refusing a database path that contains .." >&2
+      return 1
+    fi
+    if [[ -n "$value" ]]; then
+      configured="$value"
+    fi
+  fi
+  if [[ "$configured" != /* ]]; then
+    configured="$root/$configured"
+  fi
+  if resolved="$(readlink -f -- "$configured" 2>/dev/null)" && [[ -n "$resolved" && "$resolved" != *..* ]]; then
+    configured="$resolved"
+  fi
+  printf '%s\n' "$configured"
+}
+
+own_one_database() {
+  local root="$1"
+  local database="$2"
+  local dir sibling
+  dir="$(dirname "$database")"
+  case "$dir" in
+    "$root"/*)
+      sudo mkdir -p "$dir"
+      sudo chown pideck:pideck "$dir"
+      sudo chmod 750 "$dir"
+      ;;
+  esac
+  for sibling in "$database" "${database}-wal" "${database}-shm"; do
+    if sudo test -f "$sibling"; then
+      sudo chown pideck:pideck "$sibling"
+      sudo chmod 600 "$sibling"
+    fi
+  done
+}
+
 own_runtime_files() {
   local root="$1"
-  sudo chown pideck:pideck "$root/.env"
-  sudo chmod 600 "$root/.env"
+  local database defaults
+  if sudo test -f "$root/.env"; then
+    sudo chown pideck:pideck "$root/.env"
+    sudo chmod 600 "$root/.env"
+  fi
   sudo mkdir -p "$root/data"
   sudo chown pideck:pideck "$root/data"
   sudo chmod 750 "$root/data"
-  local name
-  for name in pideck.db pideck.db-wal pideck.db-shm; do
-    if [[ -f "$root/data/$name" ]]; then
-      sudo chown pideck:pideck "$root/data/$name"
-      sudo chmod 600 "$root/data/$name"
-    fi
-  done
+  database="$(database_path_for_root "$root")" || return 1
+  own_one_database "$root" "$database"
+  defaults="$(readlink -f -- "$root/data/pideck.db" 2>/dev/null || printf '%s\n' "$root/data/pideck.db")"
+  if [[ "$database" != "$defaults" ]]; then
+    own_one_database "$root" "$defaults"
+  fi
 }

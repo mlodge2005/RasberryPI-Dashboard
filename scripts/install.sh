@@ -143,6 +143,7 @@ if [[ "$term_home" != "/var/lib/pideck-term" ]]; then
   echo "Refusing to continue. No unit was replaced and no secret was moved."
   exit 1
 fi
+grant_parent_execute "$ROOT"
 sudo mkdir -p /etc/pideck
 sudo chmod 755 /etc/pideck
 

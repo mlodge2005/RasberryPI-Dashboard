@@ -45,6 +45,7 @@ fi
 
 # shellcheck source=ensure-accounts.sh
 source "$ROOT/scripts/ensure-accounts.sh"
+grant_parent_execute "$ROOT"
 install_pideck_units "$ROOT" "$ROOT/backend/.venv/bin/python"
 echo "Restarting pideck.service"
 if ! restart_pideck_units; then

@@ -54,6 +54,7 @@ if [[ "$term_home" != "/var/lib/pideck-term" ]]; then
   echo "Refusing to continue. No unit was replaced and no secret was moved."
   exit 1
 fi
+grant_parent_execute "$ROOT"
 sudo mkdir -p /etc/pideck
 sudo chmod 755 /etc/pideck
 
@@ -68,6 +69,10 @@ fi
 sudo chown root:root /etc/pideck/session.secret
 sudo chmod 600 /etc/pideck/session.secret
 
+if systemctl cat pideck.service >/dev/null 2>&1; then
+  echo "Stopping pideck.service before database ownership changes."
+  sudo systemctl stop pideck.service
+fi
 own_runtime_files "$ROOT"
 install_pideck_units "$ROOT" "$PYTHON"
 

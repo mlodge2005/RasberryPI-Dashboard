@@ -10,6 +10,8 @@ Group=pideck-term
 WorkingDirectory=/var/lib/pideck-term
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONPATH=__APP_DIR__
+Environment=PYTHONSAFEPATH=1
 ExecStart=__APP_DIR__/backend/.venv/bin/python -m backend.terminal_helper
 Restart=on-failure
 RestartSec=1

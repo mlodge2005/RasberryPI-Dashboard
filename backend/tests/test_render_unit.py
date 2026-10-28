@@ -70,12 +70,32 @@ def test_terminal_unit_is_a_separate_account() -> None:
     )
     assert "User=pideck-term\n" in rendered
     assert "Group=pideck-term\n" in rendered
+    assert "WorkingDirectory=/var/lib/pideck-term\n" in rendered
+    assert "Environment=PYTHONPATH=/home/admin/RasberryPI-Dashboard\n" in rendered
+    assert "Environment=PYTHONSAFEPATH=1\n" in rendered
     assert "ExecStart=/home/admin/RasberryPI-Dashboard/backend/.venv/bin/python -m backend.terminal_helper\n" in rendered
+    assert "WorkingDirectory=/home/admin/RasberryPI-Dashboard\n" not in rendered
     assert "NoNewPrivileges=yes\n" in rendered
     assert "LoadCredential" not in rendered
     assert "User=root" not in rendered
     with pytest.raises(SystemExit):
         render_unit_module.render_unit(template, Path("/home/admin/RasberryPI-Dashboard"), "root", "pideck-term")
+
+
+def test_terminal_pythonpath_escapes_spaces_and_rejects_relative() -> None:
+    template = (
+        Path(__file__).resolve().parents[2].joinpath("systemd", "pideck-terminal.service").read_text(encoding="utf-8")
+    )
+    rendered = render_unit_module.render_unit(template, Path("/home/pi/my deck"), "pideck-term", "pideck-term")
+    assert "Environment=PYTHONPATH=/home/pi/my\\x20deck\n" in rendered
+    assert "WorkingDirectory=/var/lib/pideck-term\n" in rendered
+    with pytest.raises(SystemExit):
+        render_unit_module.render_unit(
+            "Environment=PYTHONPATH=backend\n",
+            Path("/home/admin/RasberryPI-Dashboard"),
+            "pideck-term",
+            "pideck-term",
+        )
 
 
 def test_relative_install_path_is_rejected() -> None:

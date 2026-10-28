@@ -352,7 +352,7 @@ chmod +x scripts/*.sh
 ./scripts/migrate-privileges.sh
 ```
 
-The script saves `/etc/systemd/system/pideck.service` and `.env` under `/var/backups/pideck/` the first time, creates `pideck` and `pideck-term` if they are missing, moves `PIDECK_SESSION_SECRET` into `/etc/pideck/session.secret` when that file is empty, changes ownership of `.env` and the known database files only, installs both units, and restarts only those units.
+The script saves `/etc/systemd/system/pideck.service` and `.env` under `/var/backups/pideck/` the first time, creates `pideck` and `pideck-term` if they are missing, and grants those accounts execute-only access on parent directories that are not already world-executable. It uses `setfacl` and does not change home-directory mode bits. If the `acl` package is missing, it stops before moving the secret or restarting anything. It then moves `PIDECK_SESSION_SECRET` into `/etc/pideck/session.secret` when that file is empty, stops only `pideck.service`, and sets `pideck:pideck` ownership with mode `0600` on the configured SQLite file and its `-wal` and `-shm` siblings. It installs both units and restarts only those units. The terminal helper keeps its working directory at `/var/lib/pideck-term` and finds the checkout through `PYTHONPATH`.
 
 Check:
 
