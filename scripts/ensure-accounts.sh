@@ -23,14 +23,23 @@ ensure_pideck_accounts() {
   if ! getent group gpio >/dev/null 2>&1; then
     sudo groupadd --system gpio
   fi
+  if id pideck-wifi >/dev/null 2>&1; then
+    sudo usermod -s "$nologin" pideck-wifi
+  else
+    sudo useradd --system --create-home --home-dir /var/lib/pideck-wifi --shell "$nologin" --user-group pideck-wifi
+  fi
+  if getent group netdev >/dev/null 2>&1; then
+    sudo usermod -a -G netdev pideck-wifi
+  fi
 }
 
 install_pideck_units() {
   local root="$1"
   local python="$2"
-  local unit_tmp term_tmp
+  local unit_tmp term_tmp wifi_tmp
   unit_tmp="$(mktemp)"
   term_tmp="$(mktemp)"
+  wifi_tmp="$(mktemp)"
   "$python" "$root/scripts/render-unit.py" \
     --root "$root" \
     --user pideck \
@@ -47,17 +56,36 @@ install_pideck_units() {
   grep -E '^(User|Group|WorkingDirectory|ExecStart|EnvironmentFile|ReadWritePaths|LoadCredential)=' "$unit_tmp"
   echo "Rendered terminal unit:"
   grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$term_tmp"
+  "$python" "$root/scripts/render-unit.py" \
+    --root "$root" \
+    --user pideck-wifi \
+    --group pideck-wifi \
+    --template systemd/pideck-wifi.service \
+    --output "$wifi_tmp"
+  echo "Rendered Wi-Fi helper unit:"
+  grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$wifi_tmp"
   sudo cp "$root/systemd/pideck.tmpfiles" /etc/tmpfiles.d/pideck.conf
   sudo systemd-tmpfiles --create /etc/tmpfiles.d/pideck.conf
   sudo cp "$unit_tmp" /etc/systemd/system/pideck.service
   sudo cp "$term_tmp" /etc/systemd/system/pideck-terminal.service
   sudo cp "$root/systemd/pideck-terminal.socket" /etc/systemd/system/pideck-terminal.socket
-  rm -f "$unit_tmp" "$term_tmp"
+  sudo cp "$wifi_tmp" /etc/systemd/system/pideck-wifi.service
+  sudo cp "$root/systemd/pideck-wifi.socket" /etc/systemd/system/pideck-wifi.socket
+  if [[ ! -d /etc/polkit-1/rules.d ]]; then
+    echo "polkit rules directory is missing. The Wi-Fi helper cannot be authorized."
+    rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp"
+    return 1
+  fi
+  sudo cp "$root/polkit/50-pideck-wifi.rules" /etc/polkit-1/rules.d/50-pideck-wifi.rules
+  sudo chown root:root /etc/polkit-1/rules.d/50-pideck-wifi.rules
+  sudo chmod 644 /etc/polkit-1/rules.d/50-pideck-wifi.rules
+  rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp"
   sudo systemctl daemon-reload
-  sudo systemctl enable pideck.service pideck-terminal.socket pideck-terminal.service
+  sudo systemctl enable pideck.service pideck-terminal.socket pideck-terminal.service pideck-wifi.socket pideck-wifi.service
 }
 
 restart_pideck_units() {
+  sudo systemctl restart pideck-wifi.socket pideck-wifi.service || return 1
   sudo systemctl restart pideck-terminal.socket pideck-terminal.service || return 1
   sudo systemctl restart pideck.service || return 1
 }
@@ -75,14 +103,14 @@ grant_parent_execute() {
     mode="$(stat -c %a "$dir")"
     other=$((8#${mode: -1} & 1))
     if [[ "$other" -eq 0 ]]; then
-      echo "Granting traverse-only access on $dir for pideck and pideck-term."
-      if ! sudo setfacl -m u:pideck:--x,u:pideck-term:--x -- "$dir"; then
+      echo "Granting traverse-only access on $dir for pideck, pideck-term, and pideck-wifi."
+      if ! sudo setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x -- "$dir"; then
         echo "Could not set a traverse-only ACL on $dir."
         echo "Refusing to change home-directory mode bits."
         return 1
       fi
       acl="$(sudo getfacl -- "$dir")"
-      for user in pideck pideck-term; do
+      for user in pideck pideck-term pideck-wifi; do
         if ! grep -qx "user:${user}:--x" <<<"$acl"; then
           echo "Traverse ACL for ${user} was not recorded on $dir."
           echo "Refusing to change home-directory mode bits."

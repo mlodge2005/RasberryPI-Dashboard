@@ -1,0 +1,20 @@
+// network-control and settings.modify.system are not limited to one
+// interface by NetworkManager. The helper allowlist is what keeps them on wlan1.
+// wifi.scan is also global, and the helper requests a scan only for wlan1.
+// Enabling or disabling Wi-Fi, networking, modems, and checkpoints is not granted.
+polkit.addRule(function(action, subject) {
+    if (subject.user !== "pideck-wifi") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    var allowed = [
+        "org.freedesktop.NetworkManager.network-control",
+        "org.freedesktop.NetworkManager.wifi.scan",
+        "org.freedesktop.NetworkManager.settings.modify.system"
+    ];
+    for (var i = 0; i < allowed.length; i++) {
+        if (action.id === allowed[i]) {
+            return polkit.Result.YES;
+        }
+    }
+    return polkit.Result.NOT_HANDLED;
+});

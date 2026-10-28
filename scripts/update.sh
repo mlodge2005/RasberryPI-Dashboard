@@ -49,6 +49,7 @@ fi
 
 # shellcheck source=ensure-accounts.sh
 source "$ROOT/scripts/ensure-accounts.sh"
+ensure_pideck_accounts
 grant_parent_execute "$ROOT"
 install_pideck_units "$ROOT" "$ROOT/backend/.venv/bin/python"
 echo "Restarting pideck.service"
@@ -58,13 +59,14 @@ if ! restart_pideck_units; then
   exit 1
 fi
 sleep 1
-if systemctl is-active --quiet pideck.service && systemctl is-active --quiet pideck-terminal.service; then
+if systemctl is-active --quiet pideck.service && systemctl is-active --quiet pideck-terminal.service && systemctl is-active --quiet pideck-wifi.service; then
   echo "PiDeck restarted successfully."
   systemctl --no-pager --full status pideck.service || true
 else
   echo "PiDeck failed to restart."
   systemctl --no-pager --full status pideck.service || true
   systemctl --no-pager --full status pideck-terminal.service || true
+  systemctl --no-pager --full status pideck-wifi.service || true
   echo "Logs: journalctl -u pideck -n 80 --no-pager"
   exit 1
 fi

@@ -98,6 +98,31 @@ def test_terminal_pythonpath_escapes_spaces_and_rejects_relative() -> None:
         )
 
 
+def test_wifi_unit_is_a_separate_unprivileged_account() -> None:
+    root = Path(__file__).resolve().parents[2]
+    template = (root / "systemd" / "pideck-wifi.service").read_text(encoding="utf-8")
+    rendered = render_unit_module.render_unit(
+        template,
+        Path("/home/admin/RasberryPI-Dashboard"),
+        "pideck-wifi",
+        "pideck-wifi",
+    )
+    assert "User=pideck-wifi\n" in rendered
+    assert "Group=pideck-wifi\n" in rendered
+    assert "WorkingDirectory=/var/lib/pideck-wifi\n" in rendered
+    assert "Environment=PYTHONPATH=/home/admin/RasberryPI-Dashboard\n" in rendered
+    assert "ExecStart=/home/admin/RasberryPI-Dashboard/backend/.venv/bin/python -m backend.wifi_helper\n" in rendered
+    assert "NoNewPrivileges=yes\n" in rendered
+    assert "User=root" not in rendered
+    assert "LoadCredential" not in rendered
+    socket = (root / "systemd" / "pideck-wifi.socket").read_text(encoding="utf-8")
+    assert "ListenStream=/run/pideck/wifi.sock\n" in socket
+    assert "SocketMode=0600\n" in socket
+    assert "SocketUser=pideck\n" in socket
+    assert "SocketGroup=pideck\n" in socket
+    assert "tailscale" not in rendered.lower()
+
+
 def test_relative_install_path_is_rejected() -> None:
     with pytest.raises(SystemExit):
         render_unit_module.absolute_directory("pideck")

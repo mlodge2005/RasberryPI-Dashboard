@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from backend.api import auth, settings, system
+from backend.api import auth, settings, system, wifi
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(system.router, prefix="/system", tags=["system"])
 api_router.include_router(settings.router, tags=["settings"])
+api_router.include_router(wifi.router, prefix="/wifi", tags=["wifi"])
 
 
 @api_router.get("/health")

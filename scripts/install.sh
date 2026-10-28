@@ -26,6 +26,7 @@ echo "  $ROOT"
 echo "Installer account: $(id -un)"
 echo "Service account: pideck"
 echo "Terminal account: pideck-term"
+echo "Wi-Fi account: pideck-wifi"
 
 require_python() {
   if ! command -v python3 >/dev/null 2>&1; then

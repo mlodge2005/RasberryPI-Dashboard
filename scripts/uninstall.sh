@@ -10,10 +10,14 @@ fi
 if command -v systemctl >/dev/null 2>&1; then
   sudo systemctl disable --now pideck.service || true
   sudo systemctl disable --now pideck-terminal.service pideck-terminal.socket || true
+  sudo systemctl disable --now pideck-wifi.service pideck-wifi.socket || true
   sudo systemctl disable --now pideck-local.service || true
   sudo rm -f /etc/systemd/system/pideck.service \
     /etc/systemd/system/pideck-terminal.service \
     /etc/systemd/system/pideck-terminal.socket \
+    /etc/systemd/system/pideck-wifi.service \
+    /etc/systemd/system/pideck-wifi.socket \
+    /etc/polkit-1/rules.d/50-pideck-wifi.rules \
     /etc/systemd/system/pideck-local.service \
     /etc/pideck/Caddyfile \
     /etc/tmpfiles.d/pideck.conf

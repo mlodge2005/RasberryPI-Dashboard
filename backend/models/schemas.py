@@ -175,3 +175,65 @@ class SystemStats(BaseModel):
     storage: StorageStats
     network: NetworkStats
     battery: BatteryInfo
+
+
+WifiLinkState = Literal[
+    "connected",
+    "connecting",
+    "disconnected",
+    "disconnecting",
+    "unavailable",
+    "unmanaged",
+    "failed",
+    "deactivating",
+    "prepare",
+    "config",
+    "ip-config",
+    "ip-check",
+    "secondaries",
+    "need-auth",
+    "unknown",
+]
+WifiConnectivity = Literal["full", "limited", "portal", "none", "unknown"]
+WifiSecurity = Literal["open", "wpa-psk", "sae", "transition", "unsupported"]
+
+
+class WifiStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    interface: Literal["wlan1"]
+    state: WifiLinkState
+    ssid: str = ""
+    signal: int | None = Field(default=None, ge=0, le=100)
+    ip_address: str | None = None
+    gateway: str | None = None
+    dns: list[str] = Field(default_factory=list)
+    connectivity: WifiConnectivity
+    connection_name: str = ""
+
+
+class WifiNetwork(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ssid: str
+    signal: int = Field(ge=0, le=100)
+    security: WifiSecurity
+    security_label: str
+    saved: bool
+    in_use: bool
+    supported: bool
+
+
+class WifiScanResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: WifiStatus
+    networks: list[WifiNetwork]
+
+
+class WifiConnectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ssid: str = Field(min_length=1, max_length=32)
+    password: str = Field(default="", max_length=64)
+    saved: bool = False
