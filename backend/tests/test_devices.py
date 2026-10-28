@@ -236,12 +236,23 @@ def test_discovery_unit_and_sudoers_stay_read_only() -> None:
     assert "SocketMode=0600\n" in socket
     assert "SocketUser=pideck\n" in socket
     assert "SocketGroup=pideck\n" in socket
-    assert "/usr/sbin/hostapd_cli -i wlan0 all_sta" in sudoers
-    assert "/usr/bin/hostapd_cli -i wlan0 all_sta" in sudoers
+    assert [line for line in sudoers.splitlines() if line.strip()][-1] == (
+        "pideck-discover ALL=(root) NOPASSWD: /usr/sbin/hostapd_cli -i wlan0 all_sta"
+    )
+    assert "/usr/bin/hostapd_cli" not in sudoers
+    assert "*" not in sudoers
     assert "NOPASSWD: ALL" not in sudoers
+    assert "/bin/sh" not in sudoers
+    assert "/bin/bash" not in sudoers
     assert "deauthenticate" not in sudoers
     assert "wlan1" not in sudoers
+    assert ALLOWED_COMMANDS == (
+        ["/usr/bin/sudo", "-n", "/usr/sbin/hostapd_cli", "-i", "wlan0", "all_sta"],
+    )
     accounts = (root / "scripts" / "ensure-accounts.sh").read_text(encoding="utf-8")
+    assert accounts.index("The discovery sudoers file is missing") < accounts.index("sudo visudo -cf")
+    assert accounts.index("sudo visudo -cf") < accounts.index('sudo cp "$unit_tmp"')
+    assert accounts.index("install_discovery_sudoers") < accounts.index("systemctl enable")
     commands = "\n".join(line for line in accounts.splitlines() if not line.strip().startswith("#"))
     for forbidden in (
         "systemctl restart hostapd",

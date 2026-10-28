@@ -38,10 +38,43 @@ ensure_pideck_accounts() {
   fi
 }
 
+install_discovery_sudoers() {
+  local root="$1"
+  local source="$root/sudoers/pideck-discover"
+  local spec="pideck-discover ALL=(root) NOPASSWD: /usr/sbin/hostapd_cli -i wlan0 all_sta"
+  if [[ ! -f "$source" ]]; then
+    echo "The discovery sudoers file is missing: $source"
+    echo "The discovery helper was not enabled. No services were restarted."
+    return 1
+  fi
+  if ! command -v visudo >/dev/null 2>&1; then
+    echo "visudo is required to validate the discovery sudoers file."
+    echo "The discovery helper was not enabled. No services were restarted."
+    return 1
+  fi
+  if grep -q '[*]' "$source" || grep -q '/bin/sh\|/bin/bash' "$source"; then
+    echo "The discovery sudoers file is not limited to one association command."
+    echo "The discovery helper was not enabled. No services were restarted."
+    return 1
+  fi
+  if ! grep -qx "$spec" "$source"; then
+    echo "The discovery sudoers file is not the read-only wlan0 association command."
+    echo "The discovery helper was not enabled. No services were restarted."
+    return 1
+  fi
+  if ! sudo visudo -cf "$source"; then
+    echo "The discovery sudoers file was rejected. The discovery helper was not enabled. No services were restarted."
+    return 1
+  fi
+}
+
 install_pideck_units() {
   local root="$1"
   local python="$2"
   local unit_tmp term_tmp wifi_tmp discover_tmp
+  if ! install_discovery_sudoers "$root"; then
+    return 1
+  fi
   unit_tmp="$(mktemp)"
   term_tmp="$(mktemp)"
   wifi_tmp="$(mktemp)"
@@ -96,10 +129,6 @@ install_pideck_units() {
   sudo chown root:root /etc/polkit-1/rules.d/50-pideck-wifi.rules
   sudo chmod 644 /etc/polkit-1/rules.d/50-pideck-wifi.rules
   rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp" "$discover_tmp"
-  if ! sudo visudo -cf "$root/sudoers/pideck-discover"; then
-    echo "The discovery sudoers file was rejected. The discovery helper was not enabled."
-    return 1
-  fi
   sudo cp "$root/sudoers/pideck-discover" /etc/sudoers.d/pideck-discover
   sudo chown root:root /etc/sudoers.d/pideck-discover
   sudo chmod 440 /etc/sudoers.d/pideck-discover

@@ -21,7 +21,6 @@ _MAX_MESSAGE = 262144
 _MAX_OUTPUT = 200_000
 ALLOWED_COMMANDS = (
     ["/usr/bin/sudo", "-n", "/usr/sbin/hostapd_cli", "-i", "wlan0", "all_sta"],
-    ["/usr/bin/sudo", "-n", "/usr/bin/hostapd_cli", "-i", "wlan0", "all_sta"],
 )
 
 

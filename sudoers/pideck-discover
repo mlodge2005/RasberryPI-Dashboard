@@ -1,0 +1,4 @@
+# pideck-discover may read wlan0 associations and nothing else.
+# Raspberry Pi OS installs the hostapd package binary at /usr/sbin/hostapd_cli.
+Defaults:pideck-discover env_reset
+pideck-discover ALL=(root) NOPASSWD: /usr/sbin/hostapd_cli -i wlan0 all_sta
