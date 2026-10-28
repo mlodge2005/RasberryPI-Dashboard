@@ -2,6 +2,7 @@ import type { View } from "./Layout"
 
 const ITEMS: { id: View; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "wifi", label: "Wi-Fi" },
   { id: "terminal", label: "Terminal" },
   { id: "settings", label: "Settings" },
 ]

@@ -680,6 +680,97 @@ code {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 50%, transparent);
 }
 
+.wifi-sub {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.wifi-progress {
+  margin: 0;
+  color: var(--accent);
+}
+
+.wifi-notice {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  color: var(--text);
+}
+
+.wifi-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wifi-toolbar .card-label {
+  margin-bottom: 0;
+}
+
+.wifi-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.wifi-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.wifi-identity {
+  min-width: 0;
+}
+
+.wifi-identity strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.wifi-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.wifi-actions,
+.wifi-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.wifi-form {
+  grid-column: 1 / -1;
+}
+
+.wifi-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.wifi-form .field {
+  flex: 1 1 180px;
+  margin: 0;
+}
+
+.wifi-form .button,
+.wifi-actions .button {
+  min-height: 44px;
+}
+
 @media (max-width: 980px) {
   .cards,
   .settings-grid,
@@ -741,6 +832,20 @@ code {
   .battery-grid,
   .battery-stats {
     grid-template-columns: 1fr;
+  }
+
+  .wifi-row {
+    grid-template-columns: 1fr;
+  }
+
+  .wifi-actions,
+  .wifi-form .button {
+    width: 100%;
+  }
+
+  .wifi-actions .button,
+  .wifi-form .button {
+    flex: 1;
   }
 }
 

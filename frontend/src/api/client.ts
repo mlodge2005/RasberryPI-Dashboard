@@ -1,4 +1,4 @@
-import type { BatterySettings, SystemSnapshot, ThemeSettings, UserProfile } from "./types"
+import type { BatterySettings, SystemSnapshot, ThemeSettings, UserProfile, WifiScan, WifiStatus } from "./types"
 
 export class ApiError extends Error {
   status: number
@@ -77,6 +77,25 @@ export function saveBatterySettings(settings: {
     method: "PUT",
     body: JSON.stringify(settings),
   })
+}
+
+export function getWifiStatus(): Promise<WifiStatus> {
+  return request<WifiStatus>("/api/wifi/status")
+}
+
+export function scanWifi(): Promise<WifiScan> {
+  return request<WifiScan>("/api/wifi/scan", { method: "POST", body: "{}" })
+}
+
+export function connectWifi(ssid: string, password: string, saved: boolean): Promise<WifiStatus> {
+  return request<WifiStatus>("/api/wifi/connect", {
+    method: "POST",
+    body: JSON.stringify({ ssid, password, saved }),
+  })
+}
+
+export function disconnectWifi(): Promise<WifiStatus> {
+  return request<WifiStatus>("/api/wifi/disconnect", { method: "POST", body: "{}" })
 }
 
 export function terminalUrl(): string {

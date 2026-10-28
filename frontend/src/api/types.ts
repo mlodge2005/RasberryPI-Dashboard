@@ -105,6 +105,54 @@ export type BatteryInfo = {
   estimate: BatteryEstimate | null
 }
 
+export type WifiLinkState =
+  | "connected"
+  | "connecting"
+  | "disconnected"
+  | "disconnecting"
+  | "unavailable"
+  | "unmanaged"
+  | "failed"
+  | "deactivating"
+  | "prepare"
+  | "config"
+  | "ip-config"
+  | "ip-check"
+  | "secondaries"
+  | "need-auth"
+  | "unknown"
+
+export type WifiConnectivity = "full" | "limited" | "portal" | "none" | "unknown"
+
+export type WifiSecurity = "open" | "wpa-psk" | "sae" | "transition" | "unsupported"
+
+export type WifiStatus = {
+  interface: "wlan1"
+  state: WifiLinkState
+  ssid: string
+  signal: number | null
+  ip_address: string | null
+  gateway: string | null
+  dns: string[]
+  connectivity: WifiConnectivity
+  connection_name: string
+}
+
+export type WifiNetwork = {
+  ssid: string
+  signal: number
+  security: WifiSecurity
+  security_label: string
+  saved: boolean
+  in_use: boolean
+  supported: boolean
+}
+
+export type WifiScan = {
+  status: WifiStatus
+  networks: WifiNetwork[]
+}
+
 export type SystemSnapshot = {
   cpu: CpuStats
   memory: MemoryStats
