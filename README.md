@@ -272,6 +272,64 @@ Use `PIDECK_COOKIE_SECURE=false` only for plain `http://127.0.0.1` during develo
 
 Changing requests must come from the same host. That blocks a random website from posting to PiDeck with your cookie.
 
+## Hotspot HTTPS
+
+Tailscale Serve stays pointed at `http://127.0.0.1:8080`. A second path serves the same app on the CYBERDECK hotspot at `https://10.42.0.1:8443`.
+
+Caddy is the local proxy. It terminates TLS, forwards WebSocket upgrades, and can listen on one address. The dashboard process is unchanged, so login, themes, and the terminal use the same cookies and origin checks. `PIDECK_COOKIE_SECURE=auto` marks the cookie Secure when Caddy sends `X-Forwarded-Proto: https`. The browser Host is left as `10.42.0.1:8443`, which is what the origin check compares.
+
+The Debian `caddy` package also ships `caddy.service`, which listens on port 80. Pi-hole already uses that port. `install-local-https.sh` disables `caddy.service` and starts `pideck-local.service` instead. That unit binds only `10.42.0.1:8443`. It does not listen on port 53, port 80, `0.0.0.0`, or the upstream Wi-Fi address. It does not change hotspot, DHCP, NAT, or Tailscale settings.
+
+The certificate is a private CA stored on the Pi. Phones trust `ca.crt` once. After that, the hotspot site works with no upstream Wi-Fi, no public DNS, and no Tailscale. The leaf certificate lasts 825 days. Renewal keeps the same CA.
+
+On the Pi, as `admin`, after this revision is checked out:
+
+```bash
+sudo apt-get install caddy
+./scripts/install-local-https.sh
+```
+
+Run those together. The package may start `caddy.service` on port 80 until the installer disables it. The installer does not restart `pideck.service`.
+
+Copy the CA to the phone while you still have another path to the Pi, such as SSH or Tailscale. Do not accept the browser warning instead of installing the CA.
+
+```bash
+sudo cp /var/lib/pideck-local/ca.crt /tmp/pideck-cyberdeck-ca.crt
+sudo chmod 644 /tmp/pideck-cyberdeck-ca.crt
+```
+
+Transfer `pideck-cyberdeck-ca.crt` to the phone, then:
+
+- iPhone: open the file, install the profile, then enable it under Settings, General, About, Certificate Trust Settings.
+- Android: Settings, Security, Encryption and credentials, Install a certificate, CA certificate.
+
+Join the CYBERDECK Wi-Fi, turn off mobile data, and open `https://10.42.0.1:8443`. Log in, open the terminal, and log out. The terminal socket is `wss://10.42.0.1:8443/ws/terminal`. Repeat login and the terminal at `https://cyberdeckv2.tail1eaaa2.ts.net` from a tailnet client. The two cookies are separate because the host names differ.
+
+Confirm the listener and that a proxy failure leaves Tailscale's target up:
+
+```bash
+ss -ltn 'sport = :8443'
+systemctl is-active pideck.service pideck-local.service
+curl -fsS --cacert /var/lib/pideck-local/ca.crt https://10.42.0.1:8443/api/health
+curl -fsS http://127.0.0.1:8080/api/health
+sudo systemctl stop pideck-local.service
+curl -fsS http://127.0.0.1:8080/api/health
+sudo systemctl start pideck-local.service
+tailscale serve status
+```
+
+`ss` must show `10.42.0.1:8443` and must not show `0.0.0.0:8443`. From a device on the upstream Wi-Fi, `https://10.42.0.1:8443` and port 8443 on the Pi's upstream address should both fail.
+
+Later deploys use `./scripts/update.sh`. If the proxy unit is already installed, that script copies the Caddyfile and restarts only `pideck-local.service`. If that restart fails, `pideck.service` is left running.
+
+Remove the hotspot path:
+
+```bash
+./scripts/rollback-local-https.sh --confirm-remove-local-proxy
+```
+
+This stops and removes `pideck-local.service` and `/etc/pideck/Caddyfile`. It does not restart PiDeck, enable the packaged `caddy.service`, or delete `/var/lib/pideck-local`. Delete that directory yourself only when you also want phones to stop trusting the CA.
+
 ## GitHub deploy and update
 
 On the laptop:

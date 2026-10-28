@@ -1,0 +1,15 @@
+# Hotspot HTTPS for the CYBERDECK network.
+# Listens only on 10.42.0.1:8443 and proxies to the existing localhost app.
+# automatic HTTPS is off so Caddy does not contact Let's Encrypt or open port 80.
+{
+	auto_https off
+	admin off
+}
+
+https://10.42.0.1:8443 {
+	tls /var/lib/pideck-local/cert.pem /var/lib/pideck-local/key.pem
+	reverse_proxy 127.0.0.1:8080 {
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+	}
+}

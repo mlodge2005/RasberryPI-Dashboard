@@ -64,6 +64,15 @@ else
   echo "Logs: journalctl -u pideck -n 80 --no-pager"
   exit 1
 fi
+if [[ -f /etc/systemd/system/pideck-local.service ]]; then
+  echo "Refreshing the hotspot HTTPS proxy."
+  sudo cp "$ROOT/caddy/Caddyfile" /etc/pideck/Caddyfile
+  sudo cp "$ROOT/systemd/pideck-local.service" /etc/systemd/system/pideck-local.service
+  sudo systemctl daemon-reload
+  if ! sudo systemctl restart pideck-local.service; then
+    echo "The hotspot proxy did not restart. pideck.service was left running."
+  fi
+fi
 else
   echo "systemd service pideck.service is not installed."
   echo "The build finished. On the Pi, run ./scripts/migrate-privileges.sh or ./scripts/install.sh."

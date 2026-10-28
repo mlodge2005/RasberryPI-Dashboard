@@ -1,0 +1,28 @@
+[Unit]
+Description=PiDeck hotspot HTTPS proxy
+After=network-online.target pideck.service
+Wants=network-online.target
+# Independent of pideck.service. Stopping this proxy does not stop the dashboard.
+
+[Service]
+Type=simple
+User=caddy
+Group=caddy
+Environment=XDG_DATA_HOME=/var/lib/pideck-local
+Environment=XDG_CONFIG_HOME=/var/lib/pideck-local
+Environment=HOME=/var/lib/pideck-local
+ExecStart=/usr/bin/caddy run --config /etc/pideck/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/pideck/Caddyfile --adapter caddyfile
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/pideck-local
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
