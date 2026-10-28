@@ -1,0 +1,26 @@
+[Unit]
+Description=PiDeck hotspot discovery helper
+After=network.target
+Requires=pideck-discover.socket
+
+[Service]
+Type=simple
+User=pideck-discover
+Group=pideck-discover
+WorkingDirectory=/var/lib/pideck-discover
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONPATH=__APP_DIR__
+Environment=PYTHONSAFEPATH=1
+ExecStart=__APP_DIR__/backend/.venv/bin/python -m backend.discover_helper
+Restart=on-failure
+RestartSec=1
+# A privilege lock is omitted so sudo can run the one association command.
+# sudoers/pideck-discover allows only hostapd_cli -i wlan0 all_sta.
+PrivateTmp=yes
+ProtectSystem=strict
+InaccessiblePaths=/etc/pideck /var/lib/pideck
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

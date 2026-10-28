@@ -1,0 +1,14 @@
+[Unit]
+Description=PiDeck hotspot discovery socket
+Before=pideck.service
+
+[Socket]
+ListenStream=/run/pideck/discover.sock
+SocketMode=0600
+SocketUser=pideck
+SocketGroup=pideck
+FileDescriptorName=discover
+Service=pideck-discover.service
+
+[Install]
+WantedBy=sockets.target

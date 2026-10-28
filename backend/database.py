@@ -63,6 +63,15 @@ CREATE TABLE IF NOT EXISTS battery_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_battery_sessions_open ON battery_sessions(ended_at);
 
+CREATE TABLE IF NOT EXISTS devices (
+    mac TEXT PRIMARY KEY,
+    alias TEXT NOT NULL DEFAULT '',
+    hostname TEXT NOT NULL DEFAULT '',
+    ip_address TEXT NOT NULL DEFAULT '',
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS battery_calibration_samples (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     recorded_at TEXT NOT NULL,

@@ -31,15 +31,21 @@ ensure_pideck_accounts() {
   if getent group netdev >/dev/null 2>&1; then
     sudo usermod -a -G netdev pideck-wifi
   fi
+  if id pideck-discover >/dev/null 2>&1; then
+    sudo usermod -s "$nologin" pideck-discover
+  else
+    sudo useradd --system --create-home --home-dir /var/lib/pideck-discover --shell "$nologin" --user-group pideck-discover
+  fi
 }
 
 install_pideck_units() {
   local root="$1"
   local python="$2"
-  local unit_tmp term_tmp wifi_tmp
+  local unit_tmp term_tmp wifi_tmp discover_tmp
   unit_tmp="$(mktemp)"
   term_tmp="$(mktemp)"
   wifi_tmp="$(mktemp)"
+  discover_tmp="$(mktemp)"
   "$python" "$root/scripts/render-unit.py" \
     --root "$root" \
     --user pideck \
@@ -64,6 +70,14 @@ install_pideck_units() {
     --output "$wifi_tmp"
   echo "Rendered Wi-Fi helper unit:"
   grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$wifi_tmp"
+  "$python" "$root/scripts/render-unit.py" \
+    --root "$root" \
+    --user pideck-discover \
+    --group pideck-discover \
+    --template systemd/pideck-discover.service \
+    --output "$discover_tmp"
+  echo "Rendered discovery helper unit:"
+  grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$discover_tmp"
   sudo cp "$root/systemd/pideck.tmpfiles" /etc/tmpfiles.d/pideck.conf
   sudo systemd-tmpfiles --create /etc/tmpfiles.d/pideck.conf
   sudo cp "$unit_tmp" /etc/systemd/system/pideck.service
@@ -71,21 +85,47 @@ install_pideck_units() {
   sudo cp "$root/systemd/pideck-terminal.socket" /etc/systemd/system/pideck-terminal.socket
   sudo cp "$wifi_tmp" /etc/systemd/system/pideck-wifi.service
   sudo cp "$root/systemd/pideck-wifi.socket" /etc/systemd/system/pideck-wifi.socket
+  sudo cp "$discover_tmp" /etc/systemd/system/pideck-discover.service
+  sudo cp "$root/systemd/pideck-discover.socket" /etc/systemd/system/pideck-discover.socket
   if [[ ! -d /etc/polkit-1/rules.d ]]; then
     echo "polkit rules directory is missing. The Wi-Fi helper cannot be authorized."
-    rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp"
+    rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp" "$discover_tmp"
     return 1
   fi
   sudo cp "$root/polkit/50-pideck-wifi.rules" /etc/polkit-1/rules.d/50-pideck-wifi.rules
   sudo chown root:root /etc/polkit-1/rules.d/50-pideck-wifi.rules
   sudo chmod 644 /etc/polkit-1/rules.d/50-pideck-wifi.rules
-  rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp"
+  rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp" "$discover_tmp"
+  if ! sudo visudo -cf "$root/sudoers/pideck-discover"; then
+    echo "The discovery sudoers file was rejected. The discovery helper was not enabled."
+    return 1
+  fi
+  sudo cp "$root/sudoers/pideck-discover" /etc/sudoers.d/pideck-discover
+  sudo chown root:root /etc/sudoers.d/pideck-discover
+  sudo chmod 440 /etc/sudoers.d/pideck-discover
+  grant_discover_lease_read
   sudo systemctl daemon-reload
-  sudo systemctl enable pideck.service pideck-terminal.socket pideck-terminal.service pideck-wifi.socket pideck-wifi.service
+  sudo systemctl enable pideck.service pideck-terminal.socket pideck-terminal.service pideck-wifi.socket pideck-wifi.service pideck-discover.socket pideck-discover.service
+}
+
+grant_discover_lease_read() {
+  local lease="/var/lib/misc/dnsmasq.leases"
+  if [[ ! -f "$lease" ]]; then
+    echo "The DHCP lease file is not present yet. Hostnames stay unavailable until it exists and install is repeated."
+    return 0
+  fi
+  if ! command -v setfacl >/dev/null 2>&1; then
+    echo "setfacl is not available. Hostnames stay unavailable when the lease file is not readable by pideck."
+    return 0
+  fi
+  if ! sudo setfacl -m u:pideck:r-- -- "$lease"; then
+    echo "Could not grant pideck read access to the DHCP lease file. Hostnames may be unavailable."
+  fi
 }
 
 restart_pideck_units() {
   sudo systemctl restart pideck-wifi.socket pideck-wifi.service || return 1
+  sudo systemctl restart pideck-discover.socket pideck-discover.service || return 1
   sudo systemctl restart pideck-terminal.socket pideck-terminal.service || return 1
   sudo systemctl restart pideck.service || return 1
 }
@@ -103,14 +143,14 @@ grant_parent_execute() {
     mode="$(stat -c %a "$dir")"
     other=$((8#${mode: -1} & 1))
     if [[ "$other" -eq 0 ]]; then
-      echo "Granting traverse-only access on $dir for pideck, pideck-term, and pideck-wifi."
-      if ! sudo setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x -- "$dir"; then
+      echo "Granting traverse-only access on $dir for pideck, pideck-term, pideck-wifi, and pideck-discover."
+      if ! sudo setfacl -m u:pideck:--x,u:pideck-term:--x,u:pideck-wifi:--x,u:pideck-discover:--x -- "$dir"; then
         echo "Could not set a traverse-only ACL on $dir."
         echo "Refusing to change home-directory mode bits."
         return 1
       fi
       acl="$(sudo getfacl -- "$dir")"
-      for user in pideck pideck-term pideck-wifi; do
+      for user in pideck pideck-term pideck-wifi pideck-discover; do
         if ! grep -qx "user:${user}:--x" <<<"$acl"; then
           echo "Traverse ACL for ${user} was not recorded on $dir."
           echo "Refusing to change home-directory mode bits."

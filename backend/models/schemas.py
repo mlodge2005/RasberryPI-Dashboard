@@ -237,3 +237,43 @@ class WifiConnectRequest(BaseModel):
     ssid: str = Field(min_length=1, max_length=32)
     password: str = Field(default="", max_length=64)
     saved: bool = False
+
+
+class DeviceRecord(BaseModel):
+    mac: str
+    alias: str
+    hostname: str
+    ip_address: str | None = None
+    status: Literal["online", "offline", "unknown"]
+    first_seen: str
+    last_seen: str
+    authorized: bool | None = None
+    connected_seconds: int | None = None
+    signal_dbm: int | None = None
+    rx_bytes: int | None = None
+    tx_bytes: int | None = None
+    rx_packets: int | None = None
+    tx_packets: int | None = None
+
+
+class DeviceInventory(BaseModel):
+    devices: list[DeviceRecord]
+    connected: int
+    known: int
+    unidentified: int
+    hostapd: Literal["ok", "unavailable"]
+    dhcp: Literal["ok", "unavailable"]
+    neighbors: Literal["ok", "unavailable"]
+
+
+class DeviceAliasRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    alias: str = Field(default="", max_length=40)
+
+    @field_validator("alias")
+    @classmethod
+    def plain_alias(cls, value: str) -> str:
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("Alias cannot contain control characters")
+        return " ".join(value.split())

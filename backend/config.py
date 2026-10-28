@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     pideck_allow_non_localhost: bool = False
     pideck_terminal_socket: str = "/run/pideck/terminal.sock"
     pideck_wifi_socket: str = "/run/pideck/wifi.sock"
+    pideck_discover_socket: str = "/run/pideck/discover.sock"
 
     @field_validator(
         "pideck_host",
@@ -53,6 +54,7 @@ class Settings(BaseSettings):
         "pideck_cookie_secure",
         "pideck_terminal_socket",
         "pideck_wifi_socket",
+        "pideck_discover_socket",
         mode="before",
     )
     @classmethod

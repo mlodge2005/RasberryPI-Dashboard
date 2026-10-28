@@ -329,6 +329,14 @@ code {
   gap: 16px;
 }
 
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .page-header h1 {
   font-size: 26px;
   letter-spacing: -0.03em;
@@ -843,9 +851,90 @@ code {
     width: 100%;
   }
 
-  .wifi-actions .button,
-  .wifi-form .button {
-    flex: 1;
+.wifi-actions .button,
+.wifi-form .button {
+  flex: 1;
+}
+
+.device-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.device-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.device-stats span,
+.device-sources {
+  color: var(--text-muted);
+}
+
+.device-stats strong {
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+
+.device-sources {
+  margin: 12px 0 0;
+}
+
+.device-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.device-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+  gap: 12px 16px;
+  align-items: start;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.device-identity {
+  min-width: 0;
+}
+
+.device-identity strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.device-alias {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.device-alias label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.device-alias input {
+  width: 100%;
+}
+
+.page-header .button {
+  align-self: center;
+}
+
+  .device-row {
+    grid-template-columns: 1fr;
+  }
+
+  .device-alias,
+  .device-alias .button,
+  .page-header .button {
+    width: 100%;
   }
 }
 

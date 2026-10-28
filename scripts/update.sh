@@ -59,7 +59,7 @@ if ! restart_pideck_units; then
   exit 1
 fi
 sleep 1
-if systemctl is-active --quiet pideck.service && systemctl is-active --quiet pideck-terminal.service && systemctl is-active --quiet pideck-wifi.service; then
+if systemctl is-active --quiet pideck.service && systemctl is-active --quiet pideck-terminal.service && systemctl is-active --quiet pideck-wifi.service && systemctl is-active --quiet pideck-discover.service; then
   echo "PiDeck restarted successfully."
   systemctl --no-pager --full status pideck.service || true
 else
@@ -67,6 +67,7 @@ else
   systemctl --no-pager --full status pideck.service || true
   systemctl --no-pager --full status pideck-terminal.service || true
   systemctl --no-pager --full status pideck-wifi.service || true
+  systemctl --no-pager --full status pideck-discover.service || true
   echo "Logs: journalctl -u pideck -n 80 --no-pager"
   exit 1
 fi

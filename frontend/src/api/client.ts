@@ -1,4 +1,12 @@
-import type { BatterySettings, SystemSnapshot, ThemeSettings, UserProfile, WifiScan, WifiStatus } from "./types"
+import type {
+  BatterySettings,
+  DeviceInventory,
+  SystemSnapshot,
+  ThemeSettings,
+  UserProfile,
+  WifiScan,
+  WifiStatus,
+} from "./types"
 
 export class ApiError extends Error {
   status: number
@@ -96,6 +104,21 @@ export function connectWifi(ssid: string, password: string, saved: boolean): Pro
 
 export function disconnectWifi(): Promise<WifiStatus> {
   return request<WifiStatus>("/api/wifi/disconnect", { method: "POST", body: "{}" })
+}
+
+export function getDevices(): Promise<DeviceInventory> {
+  return request<DeviceInventory>("/api/devices")
+}
+
+export function refreshDevices(): Promise<DeviceInventory> {
+  return request<DeviceInventory>("/api/devices/refresh", { method: "POST", body: "{}" })
+}
+
+export function saveDeviceAlias(mac: string, alias: string): Promise<DeviceInventory> {
+  return request<DeviceInventory>(`/api/devices/${encodeURIComponent(mac)}`, {
+    method: "PUT",
+    body: JSON.stringify({ alias }),
+  })
 }
 
 export function terminalUrl(): string {

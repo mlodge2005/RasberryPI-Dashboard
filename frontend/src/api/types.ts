@@ -153,6 +153,35 @@ export type WifiScan = {
   networks: WifiNetwork[]
 }
 
+export type DeviceStatus = "online" | "offline" | "unknown"
+
+export type DeviceRecord = {
+  mac: string
+  alias: string
+  hostname: string
+  ip_address: string | null
+  status: DeviceStatus
+  first_seen: string
+  last_seen: string
+  authorized: boolean | null
+  connected_seconds: number | null
+  signal_dbm: number | null
+  rx_bytes: number | null
+  tx_bytes: number | null
+  rx_packets: number | null
+  tx_packets: number | null
+}
+
+export type DeviceInventory = {
+  devices: DeviceRecord[]
+  connected: number
+  known: number
+  unidentified: number
+  hostapd: "ok" | "unavailable"
+  dhcp: "ok" | "unavailable"
+  neighbors: "ok" | "unavailable"
+}
+
 export type SystemSnapshot = {
   cpu: CpuStats
   memory: MemoryStats

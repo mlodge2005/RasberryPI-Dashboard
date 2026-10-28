@@ -4,6 +4,7 @@ import type { SystemSnapshot } from "../api/types"
 import { useAuth } from "../auth/AuthContext"
 import { DashboardPage } from "../pages/DashboardPage"
 import { SettingsPage } from "../pages/SettingsPage"
+import { DevicesPage } from "../pages/DevicesPage"
 import { WifiPage } from "../pages/WifiPage"
 import { Sidebar } from "./Sidebar"
 import { TopBar } from "./TopBar"
@@ -12,11 +13,14 @@ const TerminalPage = lazy(() =>
   import("../pages/TerminalPage").then((module) => ({ default: module.TerminalPage })),
 )
 
-export type View = "dashboard" | "wifi" | "terminal" | "settings"
+export type View = "dashboard" | "wifi" | "devices" | "terminal" | "settings"
 
 function viewFromPath(path: string): View {
   if (path.startsWith("/wifi")) {
     return "wifi"
+  }
+  if (path.startsWith("/devices")) {
+    return "devices"
   }
   if (path.startsWith("/terminal")) {
     return "terminal"
@@ -30,6 +34,9 @@ function viewFromPath(path: string): View {
 function pathFor(view: View): string {
   if (view === "wifi") {
     return "/wifi"
+  }
+  if (view === "devices") {
+    return "/devices"
   }
   if (view === "terminal") {
     return "/terminal"
@@ -51,6 +58,7 @@ export function Layout() {
     const titles: Record<View, string> = {
       dashboard: "Dashboard",
       wifi: "Wi-Fi",
+      devices: "Devices",
       terminal: "Terminal",
       settings: "Settings",
     }
@@ -119,6 +127,7 @@ export function Layout() {
         <div className={view === "terminal" ? "content content-terminal" : "content"}>
           {view === "dashboard" ? <DashboardPage snapshot={snapshot} online={online} /> : null}
           {view === "wifi" ? <WifiPage /> : null}
+          {view === "devices" ? <DevicesPage /> : null}
           {view === "terminal" ? (
             <Suspense fallback={<div className="terminal-toolbar">Loading terminal</div>}>
               <TerminalPage />
