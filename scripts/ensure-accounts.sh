@@ -144,20 +144,28 @@ verify_units_before_install() {
   fi
   log="$(mktemp)"
   if ! systemd-analyze verify "$@" >"$log" 2>&1; then
-    echo "systemd-analyze verify rejected the rendered PiDeck units."
+    echo "systemd-analyze verify rejected $(checked_unit_names "$@")."
     echo "Installed systemd units were not replaced."
     cat "$log"
     rm -f "$log"
     return 1
   fi
   if grep -E -q 'Unknown key name|fatal error|bad unit file setting|Assignment outside of section' "$log"; then
-    echo "systemd-analyze verify reported an invalid PiDeck unit."
+    echo "systemd-analyze verify reported an invalid unit: $(checked_unit_names "$@")."
     echo "Installed systemd units were not replaced."
     cat "$log"
     rm -f "$log"
     return 1
   fi
   rm -f "$log"
+}
+
+checked_unit_names() {
+  local file names=""
+  for file in "$@"; do
+    names="${names} $(basename -- "$file")"
+  done
+  printf '%s\n' "${names# }"
 }
 
 require_hostapd_helper_settings() {
@@ -264,10 +272,14 @@ install_pideck_units() {
     rm -rf "$stage"
     return 1
   fi
-  cp "$root/systemd/pideck-terminal.socket" "$unit_dir/pideck-terminal.socket"
-  cp "$root/systemd/pideck-wifi.socket" "$unit_dir/pideck-wifi.socket"
-  cp "$root/systemd/pideck-discover.socket" "$unit_dir/pideck-discover.socket"
-  cp "$root/systemd/pideck-deauth.socket" "$unit_dir/pideck-deauth.socket"
+  if ! cp "$root/systemd/pideck-terminal.socket" "$unit_dir/pideck-terminal.socket" \
+    || ! cp "$root/systemd/pideck-wifi.socket" "$unit_dir/pideck-wifi.socket" \
+    || ! cp "$root/systemd/pideck-discover.socket" "$unit_dir/pideck-discover.socket" \
+    || ! cp "$root/systemd/pideck-deauth.socket" "$unit_dir/pideck-deauth.socket"; then
+    echo "Could not stage the PiDeck sockets. Installed systemd units were not replaced."
+    rm -rf "$stage"
+    return 1
+  fi
   if ! verify_units_before_install "$unit_dir"/*; then
     rm -rf "$stage"
     return 1
@@ -404,19 +416,34 @@ pideck_units_are_active() {
 install_checked_unit() {
   local source="$1"
   local dest="$2"
-  local staged
-  staged="$(mktemp)"
-  cp -- "$source" "$staged"
+  local name stage staged
+  name="$(basename -- "$dest")"
+  case "$name" in
+    *.service|*.socket|*.target|*.mount|*.timer|*.path|*.slice|*.scope) ;;
+    *)
+      echo "Refusing to install ${name}: systemd unit files need a unit suffix."
+      echo "Installed systemd units were not replaced."
+      return 1
+      ;;
+  esac
+  stage="$(mktemp -d)"
+  chmod 755 "$stage" || return 1
+  staged="$stage/$name"
+  if ! cp -- "$source" "$staged" || ! chmod 644 "$staged"; then
+    echo "Could not stage ${name} for validation. Installed systemd units were not replaced."
+    rm -rf "$stage"
+    return 1
+  fi
   if ! verify_units_before_install "$staged"; then
-    rm -f "$staged"
+    rm -rf "$stage"
     return 1
   fi
   if ! install_unit_file "$staged" "$dest"; then
-    echo "Could not install $(basename "$dest"). systemd was not reloaded."
-    rm -f "$staged"
+    echo "Could not install ${name}. systemd was not reloaded."
+    rm -rf "$stage"
     return 1
   fi
-  rm -f "$staged"
+  rm -rf "$stage"
   if ! confirm_installed_unit "$dest"; then
     echo "systemd was not reloaded."
     return 1

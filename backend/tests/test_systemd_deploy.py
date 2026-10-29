@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
+import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -85,6 +88,16 @@ systemd-analyze() {
     echo "Unit pideck-discover.service has a bad unit file setting." >&2
     return 1
   fi
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      *.service|*.socket|*.target|*.mount|*.timer|*.path)
+        if [[ -f "$arg" ]]; then
+          printf 'verify-file %s %s\n' "$(stat -c %a -- "$arg")" "$arg" >> "$PIDECK_COMMAND_LOG"
+        fi
+        ;;
+    esac
+  done
   command systemd-analyze "$@"
 }
 
@@ -166,6 +179,58 @@ case "$mode" in
     fi
     rm -rf "$tmp"
     ;;
+  proxy-keeps-existing)
+    proxy="$PIDECK_FAKE_ROOT/etc/systemd/system/pideck-local.service"
+    mkdir -p "$(dirname "$proxy")"
+    printf '%s\n' 'OLD-PROXY-UNIT' > "$proxy"
+    out="$PIDECK_FAKE_ROOT/proxy-verify.out"
+    if [[ -x /usr/bin/caddy ]]; then
+      install_checked_unit "$repo/systemd/pideck-local.service" /etc/systemd/system/pideck-local.service
+      grep -q 'User=caddy' "$proxy" || fail "existing proxy unit was not refreshed"
+      grep -qx 'OLD-PROXY-UNIT' "$proxy" && fail "old proxy unit remained"
+      grep -E -q 'verify-file 644 .*/pideck-local\.service$' "$PIDECK_COMMAND_LOG" || fail "validator did not receive a readable pideck-local.service"
+    else
+      if install_checked_unit "$repo/systemd/pideck-local.service" /etc/systemd/system/pideck-local.service >"$out" 2>&1; then
+        fail "the proxy unit was accepted without caddy"
+      fi
+      grep -qx 'OLD-PROXY-UNIT' "$proxy" || fail "existing proxy unit was replaced"
+      grep -q 'pideck-local.service' "$out" || fail "validation error did not name pideck-local.service"
+      grep -q 'Command /usr/bin/caddy is not executable' "$out" || { printf '%s\n' '--- proxy output ---'; cat "$out"; fail "caddy was not the validation failure"; }
+      grep -E -q 'Failed to prepare filename /tmp/tmp\.[^ :]+: Invalid argument' "$out" && fail "unnamed temp file was validated"
+      grep -q 'daemon-reload' "$PIDECK_COMMAND_LOG" && fail "systemd was reloaded after proxy validation failed"
+    fi
+    ;;
+  proxy-replaces-existing)
+    cat > "$repo/ok.service" <<'EOF'
+[Unit]
+Description=PiDeck validation fixture
+[Service]
+Type=simple
+ExecStart=/bin/true
+[Install]
+WantedBy=multi-user.target
+EOF
+    target="$PIDECK_FAKE_ROOT/etc/systemd/system/ok.service"
+    mkdir -p "$(dirname "$target")"
+    printf '%s\n' 'OLD-PROXY-UNIT' > "$target"
+    install_checked_unit "$repo/ok.service" /etc/systemd/system/ok.service
+    grep -q 'ExecStart=/bin/true' "$target" || fail "validated unit did not replace the installed file"
+    grep -q 'OLD-PROXY-UNIT' "$target" && fail "old unit content remained"
+    grep -q 'daemon-reload' "$PIDECK_COMMAND_LOG" || fail "daemon-reload did not run"
+    grep -E -q 'verify-file 644 .*/ok\.service$' "$PIDECK_COMMAND_LOG" || fail "validator did not receive a readable ok.service"
+    grep -E -q 'Failed to prepare filename /tmp/tmp\.' "$PIDECK_COMMAND_LOG" && fail "unnamed temp file was validated"
+    ;;
+  proxy-placeholder)
+    printf '%s\n' '[Service]' 'ExecStart=__APP_DIR__/bin/true' > "$repo/bad.service"
+    target="$PIDECK_FAKE_ROOT/etc/systemd/system/pideck-local.service"
+    mkdir -p "$(dirname "$target")"
+    printf '%s\n' 'OLD-PROXY-UNIT' > "$target"
+    if install_checked_unit "$repo/bad.service" /etc/systemd/system/pideck-local.service; then
+      fail "placeholder was installed"
+    fi
+    grep -qx 'OLD-PROXY-UNIT' "$target" || fail "placeholder replaced the installed unit"
+    grep -q 'daemon-reload' "$PIDECK_COMMAND_LOG" && fail "daemon-reload ran for a placeholder"
+    ;;
   *)
     fail "unknown mode $mode"
     ;;
@@ -198,6 +263,7 @@ def _fixture(tmp_path: Path) -> Path:
         "systemd/pideck-discover.socket",
         "systemd/pideck-deauth.service",
         "systemd/pideck-deauth.socket",
+        "systemd/pideck-local.service",
         "systemd/pideck.tmpfiles",
         "sudoers/pideck-discover",
         "sudoers/pideck-deauth",
@@ -317,6 +383,37 @@ def test_invalid_units_fail_before_installation(tmp_path: Path) -> None:
     if log.is_file():
         details += "\n--- log ---\n" + log.read_text(encoding="utf-8", errors="replace")
     assert completed.returncode == 0, details
+
+
+def test_unnamed_temp_file_reproduces_systemd_analyze_invalid_argument() -> None:
+    analyze = shutil.which("systemd-analyze")
+    if analyze is None:
+        pytest.skip("systemd-analyze is not installed")
+    descriptor, bare = tempfile.mkstemp(prefix="tmp.")
+    os.close(descriptor)
+    try:
+        assert re.fullmatch(r"/tmp/tmp\.[A-Za-z0-9]+", bare)
+        Path(bare).write_text(
+            (ROOT / "systemd" / "pideck-local.service").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        completed = subprocess.run([analyze, "verify", bare], capture_output=True, text=True)
+    finally:
+        os.unlink(bare)
+    assert completed.returncode != 0
+    assert f"Failed to prepare filename {bare}: Invalid argument" in completed.stderr
+
+
+def test_proxy_unit_is_validated_under_its_systemd_name(tmp_path: Path) -> None:
+    accounts = (ROOT / "scripts" / "ensure-accounts.sh").read_text(encoding="utf-8")
+    function = accounts.split("install_checked_unit() {", 1)[1].split("\nprepare_caddy_state() {", 1)[0]
+    assert 'staged="$(mktemp)"' not in function
+    for mode in ("proxy-keeps-existing", "proxy-replaces-existing", "proxy-placeholder"):
+        completed, log, _dest = _run(mode, tmp_path / mode)
+        details = completed.stderr + completed.stdout
+        if log.is_file():
+            details += "\n--- log ---\n" + log.read_text(encoding="utf-8", errors="replace")
+        assert completed.returncode == 0, details
 
 
 def test_unit_validation_rejects_bad_files_and_returns_nonzero(tmp_path: Path) -> None:
