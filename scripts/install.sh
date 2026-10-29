@@ -186,14 +186,20 @@ own_runtime_files "$ROOT"
 
 if command -v systemctl >/dev/null 2>&1; then
   echo "Installing the systemd units (sudo will prompt if needed)"
-  install_pideck_units "$ROOT" "$PYTHON"
-  restart_pideck_units
-  echo
-  if systemctl is-active --quiet pideck.service; then
-    echo "PiDeck is running as pideck."
-  else
-    echo "PiDeck did not stay running. Recent logs:"
+  if ! install_pideck_units "$ROOT" "$PYTHON"; then
+    echo "PiDeck unit installation failed. A required helper was not installed."
+    exit 1
   fi
+  if ! restart_pideck_units; then
+    echo "PiDeck failed to restart."
+    exit 1
+  fi
+  sleep 1
+  if ! pideck_units_are_active; then
+    exit 1
+  fi
+  echo
+  echo "PiDeck is running as pideck."
   systemctl --no-pager --full status pideck.service || true
 else
   echo "Start it manually from the repository root:"

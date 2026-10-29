@@ -19,8 +19,11 @@ RestartSec=1
 # sudoers/pideck-deauth allows only that program, with one MAC address.
 # PrivateTmp must stay off. The disconnect program execs hostapd_cli, which
 # binds its control client socket in the host /tmp. hostapd replies there.
+# ProtectSystem=strict also mounts that /tmp read-only, so the socket path
+# has to be listed in ReadWritePaths.
 PrivateTmp=no
 ProtectSystem=strict
+ReadWritePaths=/tmp
 InaccessiblePaths=/etc/pideck /var/lib/pideck
 UMask=0077
 

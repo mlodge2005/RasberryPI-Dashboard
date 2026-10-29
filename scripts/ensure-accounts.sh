@@ -49,26 +49,26 @@ install_discovery_sudoers() {
   local spec="pideck-discover ALL=(root) NOPASSWD: /usr/sbin/hostapd_cli -i wlan0 all_sta"
   if [[ ! -f "$source" ]]; then
     echo "The discovery sudoers file is missing: $source"
-    echo "The discovery helper was not enabled. No services were restarted."
+    echo "The discovery helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
   if ! command -v visudo >/dev/null 2>&1; then
     echo "visudo is required to validate the discovery sudoers file."
-    echo "The discovery helper was not enabled. No services were restarted."
+    echo "The discovery helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
   if grep -q '[*]' "$source" || grep -q '/bin/sh\|/bin/bash' "$source"; then
     echo "The discovery sudoers file is not limited to one association command."
-    echo "The discovery helper was not enabled. No services were restarted."
+    echo "The discovery helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
-  if ! grep -qx "$spec" "$source"; then
+  if ! grep -qxF "$spec" "$source"; then
     echo "The discovery sudoers file is not the read-only wlan0 association command."
-    echo "The discovery helper was not enabled. No services were restarted."
+    echo "The discovery helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
   if ! sudo visudo -cf "$source"; then
-    echo "The discovery sudoers file was rejected. The discovery helper was not enabled. No services were restarted."
+    echo "The discovery sudoers file was rejected. The discovery helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
 }
@@ -77,39 +77,39 @@ install_deauth_sudoers() {
   local root="$1"
   local source="$root/sudoers/pideck-deauth"
   local wrapper="$root/scripts/disconnect-client"
-  local spec="pideck-deauth ALL=(root) NOPASSWD: /usr/local/lib/pideck/disconnect-client [0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]"
+  local spec='pideck-deauth ALL=(root) NOPASSWD: /usr/local/lib/pideck/disconnect-client [0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]'
   if [[ ! -f "$source" || ! -f "$wrapper" ]]; then
     echo "The disconnect helper files are missing."
-    echo "The disconnect helper was not enabled. No network services were restarted."
+    echo "The disconnect helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
   if grep -q '[*]' "$source" || grep -Eq '/bin/sh|/bin/bash|hostapd_cli|NOPASSWD: ALL' "$source"; then
     echo "The disconnect sudoers file is not limited to one validated client."
-    echo "The disconnect helper was not enabled. No network services were restarted."
+    echo "The disconnect helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
-  if ! grep -qx "$spec" "$source"; then
+  if ! grep -qxF "$spec" "$source"; then
     echo "The disconnect sudoers file is not the single-client disconnect command."
-    echo "The disconnect helper was not enabled. No network services were restarted."
+    echo "The disconnect helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
   if grep -q '[*]' "$wrapper" || grep -Eq 'os\.system|shell=True|subprocess|/bin/sh|/bin/bash' "$wrapper"; then
     echo "The disconnect program is not a fixed single-client operation."
-    echo "The disconnect helper was not enabled. No network services were restarted."
+    echo "The disconnect helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
   if ! grep -q 'deauthenticate' "$wrapper"; then
     echo "The disconnect program does not deauthenticate one client."
-    echo "The disconnect helper was not enabled. No network services were restarted."
+    echo "The disconnect helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
   if ! command -v visudo >/dev/null 2>&1; then
     echo "visudo is required to validate the disconnect sudoers file."
-    echo "The disconnect helper was not enabled. No network services were restarted."
+    echo "The disconnect helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
   if ! sudo visudo -cf "$source"; then
-    echo "The disconnect sudoers file was rejected. The disconnect helper was not enabled. No network services were restarted."
+    echo "The disconnect sudoers file was rejected. The disconnect helper was not enabled. Installed systemd units were not replaced."
     return 1
   fi
 }
@@ -120,91 +120,236 @@ install_deauth_wrapper() {
   sudo install -o root -g root -m 755 "$root/scripts/disconnect-client" /usr/local/lib/pideck/disconnect-client
 }
 
+verify_units_before_install() {
+  local file log
+  if [[ "$#" -eq 0 ]]; then
+    echo "No unit files were rendered. Installed systemd units were not replaced."
+    return 1
+  fi
+  for file in "$@"; do
+    if [[ ! -s "$file" ]]; then
+      echo "Refusing to install an empty unit file. Installed systemd units were not replaced."
+      return 1
+    fi
+    if grep -E -q '__APP_DIR__|__USER__|__GROUP__' "$file"; then
+      echo "Refusing to install $(basename "$file"): it still contains a template placeholder."
+      echo "Installed systemd units were not replaced."
+      return 1
+    fi
+  done
+  if ! command -v systemd-analyze >/dev/null 2>&1; then
+    echo "systemd-analyze is required to validate units before installation."
+    echo "Installed systemd units were not replaced."
+    return 1
+  fi
+  log="$(mktemp)"
+  if ! systemd-analyze verify "$@" >"$log" 2>&1; then
+    echo "systemd-analyze verify rejected the rendered PiDeck units."
+    echo "Installed systemd units were not replaced."
+    cat "$log"
+    rm -f "$log"
+    return 1
+  fi
+  if grep -E -q 'Unknown key name|fatal error|bad unit file setting|Assignment outside of section' "$log"; then
+    echo "systemd-analyze verify reported an invalid PiDeck unit."
+    echo "Installed systemd units were not replaced."
+    cat "$log"
+    rm -f "$log"
+    return 1
+  fi
+  rm -f "$log"
+}
+
+require_hostapd_helper_settings() {
+  local file="$1"
+  local label="$2"
+  local setting
+  if grep -qx 'PrivateTmp=yes' "$file"; then
+    echo "Rendered ${label} enables a private /tmp. Installed systemd units were not replaced."
+    return 1
+  fi
+  for setting in 'PrivateTmp=no' 'ProtectSystem=strict' 'ReadWritePaths=/tmp'; do
+    if ! grep -qx "$setting" "$file"; then
+      echo "Rendered ${label} is missing ${setting}. Installed systemd units were not replaced."
+      return 1
+    fi
+  done
+}
+
+render_service_unit() {
+  local python="$1"
+  local root="$2"
+  shift 2
+  if ! "$python" "$root/scripts/render-unit.py" --root "$root" "$@"; then
+    echo "Could not render a PiDeck unit. Installed systemd units were not replaced."
+    return 1
+  fi
+}
+
+install_unit_file() {
+  local source="$1"
+  local dest="$2"
+  sudo install -o root -g root -m 644 -- "$source" "$dest"
+}
+
+confirm_installed_unit() {
+  local dest="$1"
+  local text meta
+  text="$(sudo cat -- "$dest")"
+  meta="$(sudo stat -c '%U:%G:%a' -- "$dest")"
+  if [[ "$meta" != "root:root:644" ]]; then
+    echo "Unit ${dest} has ownership or mode ${meta}, expected root:root:644."
+    return 1
+  fi
+  if grep -E -q '__APP_DIR__|__USER__|__GROUP__' <<<"$text"; then
+    echo "Installed unit ${dest} still contains a template placeholder."
+    return 1
+  fi
+}
+
+confirm_hostapd_helper_unit() {
+  local dest="$1"
+  local account="$2"
+  local text setting
+  confirm_installed_unit "$dest" || return 1
+  text="$(sudo cat -- "$dest")"
+  if ! grep -qx "User=${account}" <<<"$text"; then
+    echo "Installed ${dest} is not running as ${account}."
+    return 1
+  fi
+  if grep -qx 'PrivateTmp=yes' <<<"$text"; then
+    echo "Installed ${dest} enables a private /tmp."
+    return 1
+  fi
+  for setting in 'PrivateTmp=no' 'ProtectSystem=strict' 'ReadWritePaths=/tmp'; do
+    if ! grep -qx "$setting" <<<"$text"; then
+      echo "Installed ${dest} is missing ${setting}."
+      return 1
+    fi
+  done
+}
+
 install_pideck_units() {
   local root="$1"
   local python="$2"
-  local unit_tmp term_tmp wifi_tmp discover_tmp deauth_tmp
-  if ! install_discovery_sudoers "$root"; then
-    return 1
-  fi
-  if ! install_deauth_sudoers "$root"; then
-    return 1
-  fi
-  unit_tmp="$(mktemp)"
-  term_tmp="$(mktemp)"
-  wifi_tmp="$(mktemp)"
-  discover_tmp="$(mktemp)"
-  deauth_tmp="$(mktemp)"
-  "$python" "$root/scripts/render-unit.py" \
-    --root "$root" \
-    --user pideck \
-    --group pideck \
-    --template systemd/pideck.service \
-    --output "$unit_tmp"
-  "$python" "$root/scripts/render-unit.py" \
-    --root "$root" \
-    --user pideck-term \
-    --group pideck-term \
-    --template systemd/pideck-terminal.service \
-    --output "$term_tmp"
-  echo "Rendered dashboard unit:"
-  grep -E '^(User|Group|WorkingDirectory|ExecStart|EnvironmentFile|ReadWritePaths|LoadCredential)=' "$unit_tmp"
-  echo "Rendered terminal unit:"
-  grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$term_tmp"
-  "$python" "$root/scripts/render-unit.py" \
-    --root "$root" \
-    --user pideck-wifi \
-    --group pideck-wifi \
-    --template systemd/pideck-wifi.service \
-    --output "$wifi_tmp"
-  echo "Rendered Wi-Fi helper unit:"
-  grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$wifi_tmp"
-  "$python" "$root/scripts/render-unit.py" \
-    --root "$root" \
-    --user pideck-discover \
-    --group pideck-discover \
-    --template systemd/pideck-discover.service \
-    --output "$discover_tmp"
-  echo "Rendered discovery helper unit:"
-  grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$discover_tmp"
-  "$python" "$root/scripts/render-unit.py" \
-    --root "$root" \
-    --user pideck-deauth \
-    --group pideck-deauth \
-    --template systemd/pideck-deauth.service \
-    --output "$deauth_tmp"
-  echo "Rendered disconnect helper unit:"
-  grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$deauth_tmp"
-  sudo cp "$root/systemd/pideck.tmpfiles" /etc/tmpfiles.d/pideck.conf
-  sudo systemd-tmpfiles --create /etc/tmpfiles.d/pideck.conf
-  sudo cp "$unit_tmp" /etc/systemd/system/pideck.service
-  sudo cp "$term_tmp" /etc/systemd/system/pideck-terminal.service
-  sudo cp "$root/systemd/pideck-terminal.socket" /etc/systemd/system/pideck-terminal.socket
-  sudo cp "$wifi_tmp" /etc/systemd/system/pideck-wifi.service
-  sudo cp "$root/systemd/pideck-wifi.socket" /etc/systemd/system/pideck-wifi.socket
-  sudo cp "$discover_tmp" /etc/systemd/system/pideck-discover.service
-  sudo cp "$root/systemd/pideck-discover.socket" /etc/systemd/system/pideck-discover.socket
-  sudo cp "$deauth_tmp" /etc/systemd/system/pideck-deauth.service
-  sudo cp "$root/systemd/pideck-deauth.socket" /etc/systemd/system/pideck-deauth.socket
+  local stage unit_dir name
   if [[ ! -d /etc/polkit-1/rules.d ]]; then
     echo "polkit rules directory is missing. The Wi-Fi helper cannot be authorized."
-    rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp" "$discover_tmp" "$deauth_tmp"
+    echo "Installed systemd units were not replaced."
     return 1
   fi
-  sudo cp "$root/polkit/50-pideck-wifi.rules" /etc/polkit-1/rules.d/50-pideck-wifi.rules
-  sudo chown root:root /etc/polkit-1/rules.d/50-pideck-wifi.rules
-  sudo chmod 644 /etc/polkit-1/rules.d/50-pideck-wifi.rules
-  rm -f "$unit_tmp" "$term_tmp" "$wifi_tmp" "$discover_tmp" "$deauth_tmp"
-  sudo cp "$root/sudoers/pideck-discover" /etc/sudoers.d/pideck-discover
-  sudo chown root:root /etc/sudoers.d/pideck-discover
-  sudo chmod 440 /etc/sudoers.d/pideck-discover
-  sudo cp "$root/sudoers/pideck-deauth" /etc/sudoers.d/pideck-deauth
-  sudo chown root:root /etc/sudoers.d/pideck-deauth
-  sudo chmod 440 /etc/sudoers.d/pideck-deauth
-  install_deauth_wrapper "$root"
+  stage="$(mktemp -d)"
+  unit_dir="$stage/units"
+  mkdir -p "$unit_dir"
+  if ! render_service_unit "$python" "$root" --user pideck --group pideck --template systemd/pideck.service --output "$unit_dir/pideck.service" \
+    || ! render_service_unit "$python" "$root" --user pideck-term --group pideck-term --template systemd/pideck-terminal.service --output "$unit_dir/pideck-terminal.service" \
+    || ! render_service_unit "$python" "$root" --user pideck-wifi --group pideck-wifi --template systemd/pideck-wifi.service --output "$unit_dir/pideck-wifi.service" \
+    || ! render_service_unit "$python" "$root" --user pideck-discover --group pideck-discover --template systemd/pideck-discover.service --output "$unit_dir/pideck-discover.service" \
+    || ! render_service_unit "$python" "$root" --user pideck-deauth --group pideck-deauth --template systemd/pideck-deauth.service --output "$unit_dir/pideck-deauth.service"; then
+    rm -rf "$stage"
+    return 1
+  fi
+  echo "Rendered dashboard unit:"
+  grep -E '^(User|Group|WorkingDirectory|ExecStart|EnvironmentFile|ReadWritePaths|LoadCredential)=' "$unit_dir/pideck.service"
+  echo "Rendered terminal unit:"
+  grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$unit_dir/pideck-terminal.service"
+  echo "Rendered Wi-Fi helper unit:"
+  grep -E '^(User|Group|WorkingDirectory|ExecStart)=' "$unit_dir/pideck-wifi.service"
+  echo "Rendered discovery helper unit:"
+  grep -E '^(User|Group|WorkingDirectory|ExecStart|PrivateTmp|ProtectSystem|ReadWritePaths)=' "$unit_dir/pideck-discover.service"
+  echo "Rendered disconnect helper unit:"
+  grep -E '^(User|Group|WorkingDirectory|ExecStart|PrivateTmp|ProtectSystem|ReadWritePaths)=' "$unit_dir/pideck-deauth.service"
+  if ! require_hostapd_helper_settings "$unit_dir/pideck-discover.service" "pideck-discover.service" \
+    || ! require_hostapd_helper_settings "$unit_dir/pideck-deauth.service" "pideck-deauth.service"; then
+    rm -rf "$stage"
+    return 1
+  fi
+  cp "$root/systemd/pideck-terminal.socket" "$unit_dir/pideck-terminal.socket"
+  cp "$root/systemd/pideck-wifi.socket" "$unit_dir/pideck-wifi.socket"
+  cp "$root/systemd/pideck-discover.socket" "$unit_dir/pideck-discover.socket"
+  cp "$root/systemd/pideck-deauth.socket" "$unit_dir/pideck-deauth.socket"
+  if ! verify_units_before_install "$unit_dir"/*; then
+    rm -rf "$stage"
+    return 1
+  fi
+  if ! install_deauth_wrapper "$root" \
+    || ! install_discovery_sudoers "$root" \
+    || ! install_deauth_sudoers "$root"; then
+    rm -rf "$stage"
+    return 1
+  fi
+  if ! sudo install -o root -g root -m 644 -- "$root/systemd/pideck.tmpfiles" /etc/tmpfiles.d/pideck.conf; then
+    echo "Could not install the tmpfiles configuration. Installed systemd units were not replaced."
+    rm -rf "$stage"
+    return 1
+  fi
+  if ! sudo systemd-tmpfiles --create /etc/tmpfiles.d/pideck.conf; then
+    echo "Could not create PiDeck runtime directories. systemd was not reloaded."
+    rm -rf "$stage"
+    return 1
+  fi
+  if ! sudo install -o root -g root -m 440 -- "$root/sudoers/pideck-discover" /etc/sudoers.d/pideck-discover \
+    || ! sudo install -o root -g root -m 440 -- "$root/sudoers/pideck-deauth" /etc/sudoers.d/pideck-deauth \
+    || ! sudo install -o root -g root -m 644 -- "$root/polkit/50-pideck-wifi.rules" /etc/polkit-1/rules.d/50-pideck-wifi.rules; then
+    echo "Could not install PiDeck authorization files. systemd was not reloaded."
+    rm -rf "$stage"
+    return 1
+  fi
+  for name in \
+    pideck.service \
+    pideck-terminal.service \
+    pideck-terminal.socket \
+    pideck-wifi.service \
+    pideck-wifi.socket \
+    pideck-discover.service \
+    pideck-discover.socket \
+    pideck-deauth.service \
+    pideck-deauth.socket
+  do
+    if ! install_unit_file "$unit_dir/$name" "/etc/systemd/system/$name"; then
+      echo "Could not install ${name}. systemd was not reloaded."
+      rm -rf "$stage"
+      return 1
+    fi
+    if ! confirm_installed_unit "/etc/systemd/system/$name"; then
+      echo "systemd was not reloaded."
+      rm -rf "$stage"
+      return 1
+    fi
+  done
+  if ! confirm_hostapd_helper_unit /etc/systemd/system/pideck-discover.service pideck-discover \
+    || ! confirm_hostapd_helper_unit /etc/systemd/system/pideck-deauth.service pideck-deauth; then
+    echo "systemd was not reloaded."
+    rm -rf "$stage"
+    return 1
+  fi
+  rm -rf "$stage"
   grant_discover_lease_read
-  sudo systemctl daemon-reload
-  sudo systemctl enable pideck.service pideck-terminal.socket pideck-terminal.service pideck-wifi.socket pideck-wifi.service pideck-discover.socket pideck-discover.service pideck-deauth.socket pideck-deauth.service
+  if ! sudo systemctl daemon-reload; then
+    echo "systemctl daemon-reload failed."
+    return 1
+  fi
+  if ! sudo systemctl enable \
+    pideck.service \
+    pideck-terminal.socket \
+    pideck-terminal.service \
+    pideck-wifi.socket \
+    pideck-wifi.service \
+    pideck-discover.socket \
+    pideck-discover.service \
+    pideck-deauth.socket \
+    pideck-deauth.service; then
+    echo "systemctl enable failed for a PiDeck unit."
+    return 1
+  fi
+  if ! sudo systemctl start \
+    pideck-terminal.socket \
+    pideck-wifi.socket \
+    pideck-discover.socket \
+    pideck-deauth.socket; then
+    echo "A required PiDeck socket failed to start."
+    return 1
+  fi
 }
 
 grant_discover_lease_read() {
@@ -228,6 +373,58 @@ restart_pideck_units() {
   sudo systemctl restart pideck-deauth.socket pideck-deauth.service || return 1
   sudo systemctl restart pideck-terminal.socket pideck-terminal.service || return 1
   sudo systemctl restart pideck.service || return 1
+}
+
+pideck_units_are_active() {
+  local unit failed=0
+  local required=(
+    pideck.service
+    pideck-terminal.socket
+    pideck-terminal.service
+    pideck-wifi.socket
+    pideck-wifi.service
+    pideck-discover.socket
+    pideck-discover.service
+    pideck-deauth.socket
+    pideck-deauth.service
+  )
+  for unit in "${required[@]}"; do
+    if ! systemctl is-active --quiet "$unit"; then
+      echo "Required PiDeck unit is not active: $unit"
+      systemctl --no-pager --full status "$unit" || true
+      failed=1
+    fi
+  done
+  if [[ "$failed" -ne 0 ]]; then
+    echo "PiDeck deployment is incomplete. A required helper is not active."
+    return 1
+  fi
+}
+
+install_checked_unit() {
+  local source="$1"
+  local dest="$2"
+  local staged
+  staged="$(mktemp)"
+  cp -- "$source" "$staged"
+  if ! verify_units_before_install "$staged"; then
+    rm -f "$staged"
+    return 1
+  fi
+  if ! install_unit_file "$staged" "$dest"; then
+    echo "Could not install $(basename "$dest"). systemd was not reloaded."
+    rm -f "$staged"
+    return 1
+  fi
+  rm -f "$staged"
+  if ! confirm_installed_unit "$dest"; then
+    echo "systemd was not reloaded."
+    return 1
+  fi
+  if ! sudo systemctl daemon-reload; then
+    echo "systemctl daemon-reload failed."
+    return 1
+  fi
 }
 
 grant_parent_execute() {

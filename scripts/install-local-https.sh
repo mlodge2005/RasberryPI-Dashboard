@@ -45,9 +45,11 @@ source "$ROOT/scripts/ensure-accounts.sh"
 prepare_caddy_state
 
 sudo cp "$ROOT/caddy/Caddyfile" /etc/pideck/Caddyfile
-sudo cp "$ROOT/systemd/pideck-local.service" /etc/systemd/system/pideck-local.service
-sudo chmod 644 /etc/pideck/Caddyfile /etc/systemd/system/pideck-local.service
-sudo systemctl daemon-reload
+sudo chmod 644 /etc/pideck/Caddyfile
+if ! install_checked_unit "$ROOT/systemd/pideck-local.service" /etc/systemd/system/pideck-local.service; then
+  echo "The hotspot proxy unit was rejected. The installed proxy unit was not replaced."
+  exit 1
+fi
 sudo systemctl enable pideck-local.service
 sudo systemctl restart pideck-local.service
 

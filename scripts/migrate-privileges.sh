@@ -74,7 +74,11 @@ if systemctl cat pideck.service >/dev/null 2>&1; then
   sudo systemctl stop pideck.service
 fi
 own_runtime_files "$ROOT"
-install_pideck_units "$ROOT" "$PYTHON"
+if ! install_pideck_units "$ROOT" "$PYTHON"; then
+  echo "PiDeck unit installation failed. A required helper was not installed."
+  echo "Run ./scripts/rollback-privileges.sh --confirm-restore-previous-unit"
+  exit 1
+fi
 
 if ! restart_pideck_units; then
   echo "Restart failed. Run ./scripts/rollback-privileges.sh --confirm-restore-previous-unit"
@@ -100,6 +104,11 @@ if [[ "$healthy" -ne 1 ]]; then
   echo "pideck.service did not answer /api/health."
   echo "Run ./scripts/rollback-privileges.sh --confirm-restore-previous-unit"
   systemctl --no-pager --full status pideck.service || true
+  exit 1
+fi
+
+if ! pideck_units_are_active; then
+  echo "Run ./scripts/rollback-privileges.sh --confirm-restore-previous-unit"
   exit 1
 fi
 

@@ -17,7 +17,14 @@ if [[ ! -x "$ROOT/backend/.venv/bin/pip" ]]; then
 fi
 
 if [[ -d "$ROOT/.git" ]]; then
+  before_pull="$(git rev-parse HEAD)"
   git pull --ff-only
+  after_pull="$(git rev-parse HEAD)"
+  if [[ "$before_pull" != "$after_pull" && "${PIDECK_UPDATE_REEXEC:-}" != "1" ]]; then
+    echo "The checkout changed. Restarting ./scripts/update.sh so this run uses the new installer."
+    export PIDECK_UPDATE_REEXEC=1
+    exec "$ROOT/scripts/update.sh"
+  fi
 else
   echo "No git repository found. Skipping git pull and rebuilding the current files."
 fi
@@ -42,46 +49,49 @@ publish_frontend_dist "$ROOT"
 
 if [[ -f /etc/systemd/system/pideck.service ]]; then
   if ! id pideck >/dev/null 2>&1 || ! id pideck-term >/dev/null 2>&1 || [[ ! -s /etc/pideck/session.secret ]]; then
-  echo "Build finished. pideck.service was not replaced or restarted."
-  echo "Run ./scripts/migrate-privileges.sh to leave root, then re-run ./scripts/update.sh."
-  exit 1
-fi
+    echo "Build finished. pideck.service was not replaced or restarted."
+    echo "Run ./scripts/migrate-privileges.sh to leave root, then re-run ./scripts/update.sh."
+    exit 1
+  fi
 
-# shellcheck source=ensure-accounts.sh
-source "$ROOT/scripts/ensure-accounts.sh"
-ensure_pideck_accounts
-grant_parent_execute "$ROOT"
-install_pideck_units "$ROOT" "$ROOT/backend/.venv/bin/python"
-echo "Restarting pideck.service"
-if ! restart_pideck_units; then
-  echo "PiDeck failed to restart."
-  echo "Logs: journalctl -u pideck -n 80 --no-pager"
-  exit 1
-fi
-sleep 1
-if systemctl is-active --quiet pideck.service && systemctl is-active --quiet pideck-terminal.service && systemctl is-active --quiet pideck-wifi.service && systemctl is-active --quiet pideck-discover.service && systemctl is-active --quiet pideck-deauth.service; then
+  ensure_pideck_accounts
+  if ! id pideck-discover >/dev/null 2>&1 || ! id pideck-deauth >/dev/null 2>&1; then
+    echo "The discovery or disconnect account is missing. Installed systemd units were not replaced."
+    exit 1
+  fi
+  grant_parent_execute "$ROOT"
+  if ! install_pideck_units "$ROOT" "$ROOT/backend/.venv/bin/python"; then
+    echo "PiDeck unit installation failed. A required helper was not installed."
+    exit 1
+  fi
+  echo "Restarting PiDeck services."
+  if ! restart_pideck_units; then
+    echo "PiDeck failed to restart."
+    echo "Logs: journalctl -u pideck -u pideck-discover -u pideck-deauth -n 80 --no-pager"
+    exit 1
+  fi
+  sleep 1
+  if ! pideck_units_are_active; then
+    echo "Logs: journalctl -u pideck -u pideck-discover -u pideck-deauth -n 80 --no-pager"
+    exit 1
+  fi
+  if [[ -f /etc/systemd/system/pideck-local.service ]]; then
+    echo "Refreshing the hotspot HTTPS proxy."
+    prepare_caddy_state
+    sudo cp "$ROOT/caddy/Caddyfile" /etc/pideck/Caddyfile
+    sudo chmod 644 /etc/pideck/Caddyfile
+    if ! install_checked_unit "$ROOT/systemd/pideck-local.service" /etc/systemd/system/pideck-local.service; then
+      echo "The hotspot proxy unit was rejected. pideck.service was left running."
+      exit 1
+    fi
+    sudo systemctl enable pideck-local.service
+    if ! sudo systemctl restart pideck-local.service; then
+      echo "The hotspot proxy did not restart. pideck.service was left running."
+      exit 1
+    fi
+  fi
   echo "PiDeck restarted successfully."
   systemctl --no-pager --full status pideck.service || true
-else
-  echo "PiDeck failed to restart."
-  systemctl --no-pager --full status pideck.service || true
-  systemctl --no-pager --full status pideck-terminal.service || true
-  systemctl --no-pager --full status pideck-wifi.service || true
-  systemctl --no-pager --full status pideck-discover.service || true
-  systemctl --no-pager --full status pideck-deauth.service || true
-  echo "Logs: journalctl -u pideck -n 80 --no-pager"
-  exit 1
-fi
-if [[ -f /etc/systemd/system/pideck-local.service ]]; then
-  echo "Refreshing the hotspot HTTPS proxy."
-  prepare_caddy_state
-  sudo cp "$ROOT/caddy/Caddyfile" /etc/pideck/Caddyfile
-  sudo cp "$ROOT/systemd/pideck-local.service" /etc/systemd/system/pideck-local.service
-  sudo systemctl daemon-reload
-  if ! sudo systemctl restart pideck-local.service; then
-    echo "The hotspot proxy did not restart. pideck.service was left running."
-  fi
-fi
 else
   echo "systemd service pideck.service is not installed."
   echo "The build finished. On the Pi, run ./scripts/migrate-privileges.sh or ./scripts/install.sh."

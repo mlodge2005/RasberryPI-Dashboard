@@ -21,8 +21,11 @@ RestartSec=1
 # the host /tmp directory, and hostapd replies to that path from outside
 # this service. A private /tmp drops the reply, so the dashboard reports
 # association unavailable while the same command works in an admin shell.
+# ProtectSystem=strict also mounts the host /tmp read-only. ReadWritePaths
+# gives this service a writable /tmp without opening the rest of the system.
 PrivateTmp=no
 ProtectSystem=strict
+ReadWritePaths=/tmp
 InaccessiblePaths=/etc/pideck /var/lib/pideck
 UMask=0077
 

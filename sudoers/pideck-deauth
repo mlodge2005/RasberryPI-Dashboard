@@ -1,8 +1,9 @@
 # pideck-deauth may disconnect one wlan0 client and nothing else.
-# The MAC is six lowercase hex octets. The disconnect program rejects
-# broadcast, multicast, and any other argument. This rule does not allow
-# the hostapd control utility, a shell, or every client at once.
+# The MAC is six lowercase hex octets. Colons are escaped because a bare
+# colon is sudoers syntax and visudo rejects the rule. The disconnect
+# program rejects broadcast, multicast, and any other argument. This rule
+# does not allow the hostapd control utility, a shell, or every client at once.
 # !use_pty: the helper has no terminal. Debian's default use_pty can make
 # non-interactive sudo fail before the disconnect program starts.
 Defaults:pideck-deauth env_reset, !use_pty
-pideck-deauth ALL=(root) NOPASSWD: /usr/local/lib/pideck/disconnect-client [0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]
+pideck-deauth ALL=(root) NOPASSWD: /usr/local/lib/pideck/disconnect-client [0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]\:[0-9a-f][0-9a-f]

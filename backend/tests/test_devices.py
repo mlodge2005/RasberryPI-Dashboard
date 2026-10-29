@@ -249,6 +249,7 @@ def test_discovery_unit_and_sudoers_stay_read_only() -> None:
     assert "deauthenticate" not in unit.lower()
     assert "PrivateTmp=yes" not in unit
     assert "PrivateTmp=no\n" in unit
+    assert "ReadWritePaths=/tmp\n" in unit
     assert "/tmp" in unit
     assert "ListenStream=/run/pideck/discover.sock\n" in socket
     assert "SocketMode=0600\n" in socket
@@ -272,6 +273,8 @@ def test_discovery_unit_and_sudoers_stay_read_only() -> None:
     assert "NoNewPrivileges=" not in deauth_unit
     assert "PrivateTmp=no\n" in deauth_unit
     assert "PrivateTmp=yes" not in deauth_unit
+    assert "ProtectSystem=strict\n" in deauth_unit
+    assert "ReadWritePaths=/tmp\n" in deauth_unit
     assert "all_sta" not in deauth_unit
     assert "ListenStream=/run/pideck/deauth.sock\n" in deauth_socket
     assert "SocketMode=0600\n" in deauth_socket
@@ -282,13 +285,20 @@ def test_discovery_unit_and_sudoers_stay_read_only() -> None:
     assert "NOPASSWD: ALL" not in deauth_sudoers
     assert "/bin/sh" not in deauth_sudoers
     assert "deauthenticate" not in deauth_sudoers
-    assert "disconnect-client [0-9a-f][0-9a-f]:" in deauth_sudoers
+    assert "disconnect-client [0-9a-f][0-9a-f]\\:" in deauth_sudoers
     assert ALLOWED_COMMANDS == (
         ["/usr/bin/sudo", "-n", "/usr/sbin/hostapd_cli", "-i", "wlan0", "all_sta"],
     )
     accounts = (root / "scripts" / "ensure-accounts.sh").read_text(encoding="utf-8")
     assert accounts.index("The discovery sudoers file is missing") < accounts.index("sudo visudo -cf")
-    assert accounts.index("sudo visudo -cf") < accounts.index('sudo cp "$unit_tmp"')
+    assert 'sudo cp "$unit_tmp"' not in accounts
+    assert 'grep -qxF "$spec"' in accounts
+    assert 'grep -qx "$spec"' not in accounts
+    unit_fn = accounts.split("install_pideck_units() {", 1)[1].split("\ngrant_discover_lease_read() {", 1)[0]
+    assert unit_fn.index("verify_units_before_install") < unit_fn.index("install_unit_file")
+    assert unit_fn.index("install_discovery_sudoers") < unit_fn.index("install_unit_file")
+    assert unit_fn.index("install_deauth_sudoers") < unit_fn.index("install_unit_file")
+    assert unit_fn.index("install_unit_file") < unit_fn.index("daemon-reload")
     assert accounts.index("install_discovery_sudoers") < accounts.index("systemctl enable")
     assert accounts.index("install_deauth_sudoers") < accounts.index("systemctl enable")
     assert accounts.index("install_deauth_wrapper") < accounts.index("systemctl enable")
